@@ -8,7 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <RootNamespace>Jellyfin.Plugin.Timewatch</RootNamespace>
+    <!-- The plugin zip ships its own Newtonsoft.Json; the server does not provide one. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- File Transformation hands its callbacks a Newtonsoft JObject, so we speak its JSON. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- ExcludeAssets=runtime is mandatory: without it the plugin fails to register. -->

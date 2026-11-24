@@ -14,5 +14,8 @@ description: >
   last forty minutes of it. Requires the File Transformation plugin. Web-based clients only.
 artifacts:
   - "Jellyfin.Plugin.Timewatch.dll"
+  # File Transformation hands its callbacks a Newtonsoft JObject and the server itself does
+  # not ship Newtonsoft, so our copy has to travel with us.
+  - "Newtonsoft.Json.dll"
 changelog: >
   Initial release.
