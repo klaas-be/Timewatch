@@ -11,3 +11,6 @@ artifacts/
 
 # OS
 .DS_Store
+
+# Agent worktrees
+.claude/
