@@ -22,13 +22,15 @@ public class SuggestionEngineTests
         TimeSpan remaining,
         IReadOnlyList<Candidate> candidates,
         TimewatchSettings? settings = null,
-        Guid? playingSeriesId = null) => new()
+        Guid? playingSeriesId = null,
+        Guid? playingItemId = null) => new()
         {
             Window = WindowOf(remaining),
             Instant = Now,
             Settings = settings ?? TimewatchSettings.Default,
             Candidates = candidates,
-            PlayingSeriesId = playingSeriesId
+            PlayingSeriesId = playingSeriesId,
+            PlayingItemId = playingItemId
         };
 
     [Fact]
@@ -160,6 +162,50 @@ public class SuggestionEngineTests
             playingSeriesId: Playing));
 
         Assert.Equal(["Short"], TitlesOf(result));
+    }
+
+    /// <summary>
+    /// A Suggestion is what to watch NEXT. The episode playing right now is part-watched,
+    /// so it is a Candidate — and an in-progress one, which is the top tier — and the
+    /// teaser fires while it still has forty seconds left. Offering it back would make the
+    /// End Card suggest the thing the user is already watching.
+    /// </summary>
+    [Fact]
+    public void The_item_now_playing_is_never_offered_as_what_to_watch_next()
+    {
+        var result = Engine.Suggest(Request(
+            Min(120),
+            [
+                Episode("Playing S4E2", Playing, Min(45), playbackPosition: Min(44)),
+                Film("Arrival", Min(116))
+            ],
+            playingSeriesId: Playing,
+            playingItemId: IdOf("Playing S4E2")));
+
+        Assert.Equal(["Arrival"], TitlesOf(result));
+    }
+
+    [Fact]
+    public void The_item_now_playing_does_not_use_up_its_series_one_suggestion_slot()
+    {
+        var result = Engine.Suggest(Request(
+            Min(50),
+            [
+                Episode("Playing S4E2", Playing, Min(45), playbackPosition: Min(44)),
+                Episode("Playing S4E3", Playing, Min(45), isNativeNextUp: true)
+            ],
+            playingSeriesId: Playing,
+            playingItemId: IdOf("Playing S4E2")));
+
+        Assert.Equal(["Playing S4E3"], TitlesOf(result));
+    }
+
+    [Fact]
+    public void Nothing_is_excluded_when_nothing_is_playing()
+    {
+        var result = Engine.Suggest(Request(Min(120), [Film("Arrival", Min(116))]));
+
+        Assert.Equal(["Arrival"], TitlesOf(result));
     }
 
     [Fact]

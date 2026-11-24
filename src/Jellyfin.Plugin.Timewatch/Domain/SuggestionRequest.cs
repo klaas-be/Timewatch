@@ -27,4 +27,12 @@ public sealed record SuggestionRequest
     /// every followed series, not just this one.
     /// </summary>
     public Guid? PlayingSeriesId { get; init; }
+
+    /// <summary>
+    /// The item currently playing, when something is. It is never offered: a Suggestion is
+    /// what to watch NEXT, and the item now playing is a part-watched Candidate like any
+    /// other — in the top ranking tier, and holding its series' one-Suggestion slot — so
+    /// without this the teaser would suggest the episode the user is already watching.
+    /// </summary>
+    public Guid? PlayingItemId { get; init; }
 }
