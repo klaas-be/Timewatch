@@ -4,7 +4,6 @@ using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Timewatch.Api;
@@ -81,15 +80,25 @@ public class TimewatchController : ControllerBase
 
     /// <summary>
     /// Starts a Watch Window for the acting user, replacing any window they already have so
-    /// that Remaining Time is never ambiguous. The body may be omitted to take the admin's
-    /// default duration.
+    /// that Remaining Time is never ambiguous.
     /// </summary>
+    /// <param name="minutes">
+    /// How long the user has, in minutes — minutes because that is the unit the start page
+    /// offers. Omit it to take the admin's configured default.
+    /// </param>
+    /// <param name="cancellationToken">The request's cancellation token.</param>
+    /// <remarks>
+    /// A query parameter rather than a JSON body on purpose. Jellyfin's serializer is
+    /// configured case-sensitively, so a body of <c>{ "minutes": 120 }</c> would bind to
+    /// nothing and silently start a window of the default length instead; query binding is
+    /// case-insensitive, and a start page then needs no request body at all.
+    /// </remarks>
     [HttpPost("WatchWindow")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<WatchWindowStatus>> StartWatchWindow(
-        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] StartWatchWindowRequest? request,
+        [FromQuery] int? minutes,
         CancellationToken cancellationToken)
     {
         if (await ActingUserIdAsync().ConfigureAwait(false) is not { } userId)
@@ -99,7 +108,7 @@ public class TimewatchController : ControllerBase
 
         var settings = Settings();
 
-        if (WindowDuration.Resolve(request?.Minutes, settings) is not { } duration)
+        if (WindowDuration.Resolve(minutes, settings) is not { } duration)
         {
             return BadRequest(
                 $"A Watch Window lasts between a minute and {WindowDuration.Longest.TotalHours} hours.");
