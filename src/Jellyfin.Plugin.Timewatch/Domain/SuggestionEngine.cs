@@ -32,6 +32,7 @@ public sealed class SuggestionEngine
         var tolerance = request.Settings.OvershootTolerance;
 
         var fitting = request.Candidates
+            .Where(candidate => candidate.ItemId != request.PlayingItemId)
             .Where(candidate => candidate.EffectiveRuntime > TimeSpan.Zero)
             .Where(candidate => Fits(candidate, remaining, tolerance))
             .ToList();

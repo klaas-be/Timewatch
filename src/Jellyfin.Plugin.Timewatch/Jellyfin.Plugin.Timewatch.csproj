@@ -38,6 +38,14 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+
+    <!--
+      Embedded, not content: the release zip must contain exactly the plugin DLL and
+      meta.json, because Jellyfin's PluginLoadContext loads every DLL it finds in the plugin
+      folder and CI enforces the contents. The script is served out of the assembly by
+      TimewatchScriptController.
+    -->
+    <EmbeddedResource Include="Injection\timewatch.js" />
   </ItemGroup>
 
 </Project>

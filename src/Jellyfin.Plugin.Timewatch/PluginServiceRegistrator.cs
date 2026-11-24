@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.Timewatch.Adapters;
 using Jellyfin.Plugin.Timewatch.Domain;
+using Jellyfin.Plugin.Timewatch.Storage;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,5 +22,17 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // adapter holds per-request state.
         serviceCollection.AddSingleton<ICandidateSource, JellyfinCandidateSource>();
         serviceCollection.AddSingleton<IWatchedMarker, JellyfinWatchedMarker>();
+
+        // The data folder is the plugin's own, and only the plugin instance knows it. It is
+        // resolved lazily rather than captured here because RegisterServices runs while the
+        // container is being built, which is not necessarily after the plugin was
+        // constructed; falling back to the host's plugin folder would put an evening's
+        // windows somewhere nobody looks, so a missing instance is a hard error — and one
+        // raised on first use, where it is logged as a failed request, rather than from
+        // RegisterServices, where a throw marks the whole plugin Malfunctioned.
+        serviceCollection.AddSingleton<IWatchWindowStore>(_ => new FileWatchWindowStore(
+            TimewatchPlugin.Instance?.DataFolderPath
+            ?? throw new InvalidOperationException(
+                "Timewatch's plugin instance is not available, so its data folder is unknown.")));
     }
 }
