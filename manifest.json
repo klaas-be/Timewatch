@@ -6,6 +6,15 @@
     "overview": "Watch suggestions that fit the time you actually have.",
     "owner": "klaas-be",
     "category": "General",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.0.1",
+        "changelog": "Initial release.",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/klaas-be/Timewatch/releases/download/v0.1.0.1/timewatch_0.1.0.1.zip",
+        "checksum": "0db47b8ed37638129c4bfc813b25f53b",
+        "timestamp": "2026-11-24T20:26:38Z"
+      }
+    ]
   }
 ]
