@@ -39,7 +39,11 @@ public sealed class SuggestionEngine
         var offerable = fitting
             .Where(candidate => IsFillable(candidate, fitting, remaining, tolerance))
             .OrderBy(candidate => Rank(candidate, request.PlayingSeriesId))
-            .ThenBy(candidate => remaining - candidate.EffectiveRuntime)
+            // Least Slack by MAGNITUDE: Overshoot Tolerance exists so that a small overrun can
+            // beat a large gap, not so that overrunning beats fitting exactly. Ordering by
+            // signed Slack would rank a candidate that runs 5 minutes past the end of the
+            // window above one that fits it perfectly.
+            .ThenBy(candidate => (remaining - candidate.EffectiveRuntime).Duration())
             .ThenBy(candidate => TieBreak(candidate.ItemId, _randomSeed))
             .ToList();
 

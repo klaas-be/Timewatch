@@ -289,6 +289,20 @@ public class SuggestionEngineTests
         Assert.Equal(["Ninety", "Eighty"], afterDismiss);
     }
 
+    [Fact]
+    public void An_exact_fit_beats_an_item_that_overruns_by_less_than_the_gap_it_saves()
+    {
+        // Slack is minimised by magnitude, not signed: Overshoot Tolerance lets a small
+        // overrun beat a large gap, but it must never make overrunning preferable to
+        // fitting. The 60 minute film fits exactly; the 65 minute one runs 5 minutes past
+        // the end of the window, which is inside the default 10 minute tolerance.
+        var result = Engine.Suggest(Request(Min(60), [Film("Over", Min(65)), Film("Exact", Min(60))]));
+
+        var offered = Assert.IsType<SuggestionResult.Offered>(result);
+        Assert.Equal("Exact", offered.Suggestions[0].Candidate.Title);
+        Assert.Equal(TimeSpan.Zero, offered.Suggestions[0].Slack);
+    }
+
     /// <summary>Five films of descending length, so the slack ordering is unambiguous.</summary>
     private static readonly IReadOnlyList<Candidate> Ladder =
     [
