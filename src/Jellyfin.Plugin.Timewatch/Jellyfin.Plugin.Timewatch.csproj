@@ -8,13 +8,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <RootNamespace>Jellyfin.Plugin.Timewatch</RootNamespace>
-    <!-- The plugin zip ships its own Newtonsoft.Json; the server does not provide one. -->
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- File Transformation hands its callbacks a Newtonsoft JObject, so we speak its JSON. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <!--
+      File Transformation hands its callbacks a Newtonsoft JObject, so we need the compile-time
+      type - but ExcludeAssets=runtime keeps the DLL OUT of our output, which is essential and
+      not an optimisation. Jellyfin 12.4 gives every plugin its own collectible PluginLoadContext
+      and loads every DLL in the plugin folder into it. A Newtonsoft.Json.dll of our own would
+      win that context's cache-by-name, so our JObject would be a different type from the one
+      File Transformation's method signature expects (which resolves to the server's copy in the
+      default context), and the reflective Invoke would fail with an argument mismatch. The two
+      reference plugins ship no Newtonsoft either, which is why their reflection call works.
+    -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

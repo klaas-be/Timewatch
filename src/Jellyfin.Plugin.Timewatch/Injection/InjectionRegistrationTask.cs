@@ -91,7 +91,7 @@ public class InjectionRegistrationTask : IScheduledTask
             _logger.LogError(
                 "Timewatch needs the File Transformation plugin to reach the web client, and it "
                 + "is not installed. Install \"File Transformation\" (>= 3.0.3.0) from "
-                + "https://repo.jellyfin.org/files/plugin/manifest.json and restart the server. "
+                + "https://www.iamparadox.dev/jellyfin/plugins/manifest.json and restart the server. "
                 + "Until then Timewatch is inert: no End Card, no teaser, no suppression");
             return;
         }
@@ -125,7 +125,30 @@ public class InjectionRegistrationTask : IScheduledTask
             { "callbackMethod", callbackMethod }
         };
 
-        registerTransformation.Invoke(null, [payload]);
+        try
+        {
+            registerTransformation.Invoke(null, [payload]);
+        }
+        catch (ArgumentException ex)
+        {
+            // Our JObject is not the JObject File Transformation expects: two Newtonsoft
+            // assemblies, one per load context. This means a Newtonsoft.Json.dll has found its
+            // way into the plugin folder; it must resolve to the server's copy instead.
+            throw new InvalidOperationException(
+                "Timewatch passed File Transformation a JObject it could not accept. A "
+                + "Newtonsoft.Json.dll in the Timewatch plugin folder would cause exactly this: "
+                + "it must not be shipped, so that it resolves to the server's own copy.",
+                ex);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            // A failure inside RegisterTransformation is a different problem from failing to
+            // call it; keep them distinguishable in the log.
+            throw new InvalidOperationException(
+                "File Transformation threw while registering a Timewatch transformation.",
+                ex.InnerException);
+        }
+
         _logger.LogDebug("Timewatch registered a transformation for {Pattern}", fileNamePattern);
     }
 }
