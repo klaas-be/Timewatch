@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "0.1.0.2",
+        "changelog": "Initial release.",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/klaas-be/Timewatch/releases/download/v0.1.0.2/timewatch_0.1.0.2.zip",
+        "checksum": "eb3a1cf069eeefc3bfeb5e3ef9122f16",
+        "timestamp": "2026-11-24T20:35:16Z"
+      },
+      {
         "version": "0.1.0.1",
         "changelog": "Initial release.",
         "targetAbi": "12.4.0.0",
