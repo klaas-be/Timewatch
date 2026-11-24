@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Jellyfin.Plugin.Timewatch/Jellyfin.Plugin.Timewatch.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Jellyfin.Plugin.Timewatch.Tests/Jellyfin.Plugin.Timewatch.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Timewatch</title>
+</head>
+<body>
+<div id="TimewatchConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-controller="__plugin/timewatchconfig">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="TimewatchConfigForm">
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="DefaultWindowMinutes" min="5" max="720"
+                           label="Default window duration (minutes)" required />
+                    <div class="fieldDescription">Pre-filled duration on the start page.</div>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="OvershootToleranceMinutes" min="0" max="60"
+                           label="Overshoot tolerance (minutes)" required />
+                    <div class="fieldDescription">
+                        How far a suggestion may run past the end of your window. Finishing a few
+                        minutes late usually beats a large gap of dead air.
+                    </div>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="SuggestionCount" min="1" max="8"
+                           label="Suggestions on the end card" required />
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="LibraryIds"
+                           label="Library ids to suggest from (comma separated, blank for all)" />
+                    <div class="fieldDescription">
+                        Keeps home videos, music videos and clips out of your suggestions.
+                    </div>
+                </div>
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="DeveloperMode" />
+                    <span>Developer mode (serve the injected script uncached)</span>
+                </label>
+                <br />
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+            <br />
+            <div class="fieldDescription">
+                The end card requires the
+                <a is="emby-linkbutton" class="button-link"
+                   href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation"
+                   target="_blank" rel="noopener noreferrer">File Transformation</a>
+                plugin, which Jellyfin cannot install automatically. It reaches web-based
+                clients only: browsers, Jellyfin Desktop, LG webOS, Android mobile and iOS.
+                Samsung/Tizen, Android TV, Roku, Kodi and Swiftfin cannot show it.
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = 'd5e1c166-10be-467b-95a1-82db3310661a';
+
+            document.querySelector('#TimewatchConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        document.querySelector('#DefaultWindowMinutes').value = config.DefaultWindowMinutes;
+                        document.querySelector('#OvershootToleranceMinutes').value = config.OvershootToleranceMinutes;
+                        document.querySelector('#SuggestionCount').value = config.SuggestionCount;
+                        document.querySelector('#LibraryIds').value = (config.LibraryIds || []).join(', ');
+                        document.querySelector('#DeveloperMode').checked = config.DeveloperMode;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#TimewatchConfigForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.DefaultWindowMinutes = parseInt(document.querySelector('#DefaultWindowMinutes').value, 10);
+                        config.OvershootToleranceMinutes = parseInt(document.querySelector('#OvershootToleranceMinutes').value, 10);
+                        config.SuggestionCount = parseInt(document.querySelector('#SuggestionCount').value, 10);
+                        config.LibraryIds = document.querySelector('#LibraryIds').value
+                            .split(',').map(function (s) { return s.trim(); })
+                            .filter(function (s) { return s.length > 0; });
+                        config.DeveloperMode = document.querySelector('#DeveloperMode').checked;
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    return false;
+                });
+        })();
+    </script>
+</div>
+</body>
+</html>

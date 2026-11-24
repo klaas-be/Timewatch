@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "d5e1c166-10be-467b-95a1-82db3310661a",
+    "name": "Timewatch",
+    "description": "Set how long you have and get watch suggestions that fit the time left, replacing Jellyfin's native Up Next popup until your time is up.",
+    "overview": "Watch suggestions that fit the time you actually have.",
+    "owner": "klaas-be",
+    "category": "General",
+    "versions": []
+  }
+]
