@@ -22,6 +22,19 @@ public interface IWatchWindowStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// What the store remembers of the user's most recent Watch Window, running or not, or
+    /// <see langword="null"/> when they have never started one.
+    /// </summary>
+    /// <remarks>
+    /// This is how a client learns why a window it was running has gone away: cancelled, or
+    /// out of time. Expiry is still judged by the caller against its own instant — the
+    /// store does not read the clock — so this method takes none.
+    /// </remarks>
+    Task<WatchWindowRecord?> GetLatestWindowAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Makes <paramref name="window"/> the active window for its user, replacing any
     /// existing one so that Remaining Time is never ambiguous.
     /// </summary>
@@ -29,7 +42,8 @@ public interface IWatchWindowStore
 
     /// <summary>
     /// Clears the user's window, returning them to normal Jellyfin behaviour at once.
-    /// Cancelling when nothing is active is not an error.
+    /// Cancelling when nothing is active is not an error. The cancellation is remembered:
+    /// see <see cref="GetLatestWindowAsync"/>.
     /// </summary>
     Task CancelWindowAsync(Guid userId, CancellationToken cancellationToken = default);
 }

@@ -25,6 +25,55 @@ public class ApiContractTests
         Assert.Equal(0, status.RemainingSeconds);
     }
 
+    /// <summary>
+    /// Cancelling and running out both leave no active window, and the client cannot tell
+    /// them apart from that alone — but it has to: the user who cancelled asked for normal
+    /// Jellyfin behaviour back, and a stopping overlay to dismiss is the opposite of that.
+    /// </summary>
+    [Fact]
+    public void A_cancelled_window_says_it_was_cancelled_rather_than_that_the_time_ran_out()
+    {
+        var record = new WatchWindowRecord
+        {
+            Window = WatchWindow.StartingAt(User, Now, TimeSpan.FromHours(2)),
+            Cancelled = true
+        };
+
+        var status = WatchWindowStatus.ForLatest(record, Now.AddMinutes(10), TimewatchSettings.Default);
+
+        Assert.False(status.Active);
+        Assert.Equal("Cancelled", status.EndedReason);
+    }
+
+    [Fact]
+    public void A_window_whose_time_ran_out_says_so()
+    {
+        var record = new WatchWindowRecord
+        {
+            Window = WatchWindow.StartingAt(User, Now, TimeSpan.FromHours(2)),
+            Cancelled = false
+        };
+
+        var status = WatchWindowStatus.ForLatest(record, Now.AddHours(3), TimewatchSettings.Default);
+
+        Assert.False(status.Active);
+        Assert.Equal("Expired", status.EndedReason);
+    }
+
+    [Fact]
+    public void A_running_window_and_a_user_who_never_had_one_both_name_no_ending()
+    {
+        var running = new WatchWindowRecord
+        {
+            Window = WatchWindow.StartingAt(User, Now, TimeSpan.FromHours(2)),
+            Cancelled = false
+        };
+
+        Assert.True(WatchWindowStatus.ForLatest(running, Now, TimewatchSettings.Default).Active);
+        Assert.Null(WatchWindowStatus.ForLatest(running, Now, TimewatchSettings.Default).EndedReason);
+        Assert.Null(WatchWindowStatus.ForLatest(null, Now, TimewatchSettings.Default).EndedReason);
+    }
+
     [Fact]
     public void An_active_window_reads_as_its_end_time_and_its_remaining_seconds()
     {

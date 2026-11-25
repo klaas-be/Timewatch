@@ -60,7 +60,14 @@ parameter binds whatever its case.
 { "Active": true, "EndsAt": "2026-11-24T22:30:00+00:00", "RemainingSeconds": 5400, "DefaultWindowMinutes": 120 }
 ```
 
-When nothing is active, `Active` is false, `RemainingSeconds` is 0 and `EndsAt` is absent.
+When nothing is active, `Active` is false, `RemainingSeconds` is 0 and `EndsAt` is absent,
+and `EndedReason` says why the user's most recent Watch Window is no longer running:
+`"Cancelled"` when they cancelled it, `"Expired"` when its time ran out. It is absent while
+a Window is active and for a user who has never started one — so a response is either
+`{ "Active": true, … }` or `{ "Active": false, "RemainingSeconds": 0, "EndedReason": "Cancelled",
+"DefaultWindowMinutes": 120 }`. It exists because nothing else can tell the two endings
+apart: both read as no Window at all.
+
 Show Remaining Time by counting down to `EndsAt` rather than from `RemainingSeconds`, so a
 sleeping tab cannot drift. `DefaultWindowMinutes` travels with the status so the start page
 can prefill it without reading the plugin configuration, which needs an admin.
@@ -82,8 +89,12 @@ and the End Card should label it as such.
 Notes for tickets 07 and 09:
 
 - A Watch Window whose end time has passed reads as absent, so `GET /Timewatch/Suggestions`
-  answers 404 rather than `spent: true` for it. A client that was running a Window treats
-  that 404 as "the time is up": show the Spent card and release both suppression leases.
+  answers 404 rather than `spent: true` for it. So does a cancelled one. A client that was
+  running a Window releases both suppression leases on that 404 either way, and then asks
+  `GET /Timewatch/WatchWindow` for `EndedReason` to learn what to say: the Spent card for
+  `"Expired"` (and for an unreadable answer, which keeps the stopping signal), nothing at
+  all for `"Cancelled"` — cancelling is the user asking for normal Jellyfin behaviour back,
+  and a stopping overlay to dismiss is the opposite of what they asked for.
 - Pass `playingItemId` whenever something is playing. The item now playing is a
   part-watched Candidate in the top ranking tier and holds its series' one-Suggestion slot,
   so without it the teaser suggests the episode already on screen.

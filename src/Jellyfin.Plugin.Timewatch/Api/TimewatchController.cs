@@ -71,11 +71,13 @@ public class TimewatchController : ControllerBase
 
         var settings = Settings();
         var now = DateTimeOffset.UtcNow;
-        var window = await _windowStore
-            .GetActiveWindowAsync(userId, now, cancellationToken)
+        var record = await _windowStore
+            .GetLatestWindowAsync(userId, cancellationToken)
             .ConfigureAwait(false);
 
-        return WatchWindowStatus.For(window, now, settings);
+        // The most recent window rather than the active one: when none is active, this is
+        // where a client learns whether that is a cancel or the time having run out.
+        return WatchWindowStatus.ForLatest(record, now, settings);
     }
 
     /// <summary>

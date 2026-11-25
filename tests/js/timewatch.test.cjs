@@ -307,6 +307,57 @@ test('the teaser follows the Suggestion on offer instead of latching onto the fi
     assert.match(teaserText(document), /Defiant Jazz/);
 });
 
+test('cancelling a Watch Window goes inert silently; running out says the time is up', async (t) => {
+    // Both endings read as "no Watch Window", so the status endpoint's EndedReason is the
+    // only way to tell them apart — and the user who just cancelled asked for normal
+    // Jellyfin behaviour back, not for an overlay to dismiss.
+    async function endWindowWith(endedReason) {
+        const document = fakeDocument();
+        globalThis.document = document;
+
+        const client = fakeClient();
+        const storage = fakeStorage({
+            'timewatch-window-was-running': '1',
+            'u1-enableNextVideoInfoOverlay': 'true'
+        });
+        const controller = timewatch.createController({
+            playbackManager: { play: () => {}, getCurrentPlayer: () => null },
+            events: null,
+            apiClient: client,
+            storage: storage,
+            userId: 'u1'
+        });
+
+        try {
+            const polled = controller.refresh();
+            client.calls[0].reject({ status: 404 });
+            await settled();
+
+            const status = client.calls.find((call) => call.url.indexOf('WatchWindow') >= 0);
+            assert.ok(status, 'the client asked why the Window ended');
+            status.resolve({ Active: false, RemainingSeconds: 0, EndedReason: endedReason });
+            await polled;
+
+            return {
+                overlay: document.body.children.some((node) => node.className === 'timewatch-overlay'),
+                marker: storage.has('timewatch-window-was-running'),
+                nativeOverlayFlag: storage.getItem('u1-enableNextVideoInfoOverlay')
+            };
+        } finally {
+            controller.destroy();
+            delete globalThis.document;
+        }
+    }
+
+    const cancelled = await endWindowWith('Cancelled');
+    assert.equal(cancelled.overlay, false, 'a cancel puts up no card');
+    assert.equal(cancelled.marker, false, 'and leaves nothing behind to signal later');
+    assert.equal(cancelled.nativeOverlayFlag, 'true', 'native Up Next is back');
+
+    const expired = await endWindowWith('Expired');
+    assert.equal(expired.overlay, true, 'the time running out is the one thing worth a card');
+});
+
 test('a surprise while handling a response degrades the feature instead of ending polling', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
     const client = fakeClient();

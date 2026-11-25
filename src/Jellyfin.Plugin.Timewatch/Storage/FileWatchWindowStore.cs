@@ -65,11 +65,19 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
         DateTimeOffset asOf,
         CancellationToken cancellationToken = default)
     {
+        var record = await GetLatestWindowAsync(userId, cancellationToken).ConfigureAwait(false);
+
+        return record is not null && record.IsActiveAt(asOf) ? record.Window : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<WatchWindowRecord?> GetLatestWindowAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
         var entries = await WithFileAsync(ReadAsync, cancellationToken).ConfigureAwait(false);
 
-        var window = entries.FirstOrDefault(entry => entry.UserId == userId)?.ToWindow();
-
-        return window is null || window.HasExpiredAt(asOf) ? null : window;
+        return entries.FirstOrDefault(entry => entry.UserId == userId)?.ToRecord();
     }
 
     /// <inheritdoc />
@@ -94,8 +102,13 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
             async token =>
             {
                 var entries = await ReadAsync(token).ConfigureAwait(false);
-                if (entries.RemoveAll(entry => entry.UserId == userId) > 0)
+                var cancelled = entries.Where(entry => entry.UserId == userId && !entry.Cancelled).ToList();
+                if (cancelled.Count > 0)
                 {
+                    // Kept rather than removed, with the cancellation recorded: a client
+                    // that was running this window has to be able to find out that it went
+                    // away because the user said so, not because the time ran out.
+                    cancelled.ForEach(entry => entry.Cancelled = true);
                     await WriteAsync(entries, token).ConfigureAwait(false);
                 }
             },
@@ -213,6 +226,13 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
         [JsonPropertyName("endsAt")]
         public DateTimeOffset EndsAt { get; set; }
 
+        /// <summary>
+        /// Whether the user cancelled this window. Absent in a file written by an earlier
+        /// version, which reads as false: those windows all ran out.
+        /// </summary>
+        [JsonPropertyName("cancelled")]
+        public bool Cancelled { get; set; }
+
         public static StoredWindow From(WatchWindow window) =>
             new() { UserId = window.UserId, EndsAt = window.EndsAt };
 
@@ -221,5 +241,7 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
         /// cannot change which instant the window ends at.
         /// </summary>
         public WatchWindow ToWindow() => new() { UserId = UserId, EndsAt = EndsAt };
+
+        public WatchWindowRecord ToRecord() => new() { Window = ToWindow(), Cancelled = Cancelled };
     }
 }

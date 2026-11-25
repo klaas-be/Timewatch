@@ -63,6 +63,15 @@ The state of a Watch Window whose Remaining Time can no longer be filled — eit
 time has passed, or no Candidate fits. A Spent Window shows the User that their time is up
 and offers nothing. It cannot be extended; that is the point of it.
 
+## Cancel
+
+The User's act of ending their own Watch Window early. A cancelled Window is over at once
+and never becomes active again; the User is back to normal Jellyfin behaviour, with both
+native suppressions released. Cancel is not Spent: Spent is the evening running out and is
+worth telling the User about, whereas a Cancel is what the User just asked for and is
+therefore silent. Both read as "no Watch Window", so which of the two happened is
+remembered for the client to ask.
+
 ## Dismiss
 
 The User's act of removing a Suggestion they no longer intend to watch. Dismissing marks

@@ -33,7 +33,28 @@ public sealed record WatchWindowStatus
     public required int DefaultWindowMinutes { get; init; }
 
     /// <summary>
-    /// The status of <paramref name="window"/> — or of having none — at an instant.
+    /// Why the user's most recent Watch Window is no longer running:
+    /// <see cref="Cancelled"/> when they cancelled it, <see cref="Expired"/> when its time
+    /// ran out. Absent while a window is active, and absent for a user who has never
+    /// started one.
+    /// </summary>
+    /// <remarks>
+    /// It is the one thing a client cannot work out for itself: both endings read as no
+    /// window at all. A client that was running a window shows the stopping signal for an
+    /// expiry and goes quietly inert for a cancel, because cancelling is the user asking
+    /// for normal Jellyfin behaviour back.
+    /// </remarks>
+    public string? EndedReason { get; init; }
+
+    /// <summary><see cref="EndedReason"/> for a window the user cancelled.</summary>
+    public const string Cancelled = "Cancelled";
+
+    /// <summary><see cref="EndedReason"/> for a window whose end time has passed.</summary>
+    public const string Expired = "Expired";
+
+    /// <summary>
+    /// The status of <paramref name="window"/> — or of having none — at an instant. Says
+    /// nothing about an ending; <see cref="ForLatest"/> is the one that can.
     /// </summary>
     public static WatchWindowStatus For(
         WatchWindow? window,
@@ -48,6 +69,25 @@ public sealed record WatchWindowStatus
             EndsAt = window?.EndsAt,
             RemainingSeconds = window is null ? 0 : WholeSeconds.Of(window.RemainingTimeAt(instant)),
             DefaultWindowMinutes = (int)settings.DefaultWindowDuration.TotalMinutes
+        };
+    }
+
+    /// <summary>
+    /// The status of the user's most recent Watch Window at an instant, including why it
+    /// ended if it has.
+    /// </summary>
+    public static WatchWindowStatus ForLatest(
+        WatchWindowRecord? record,
+        DateTimeOffset instant,
+        TimewatchSettings settings)
+    {
+        var active = record is not null && record.IsActiveAt(instant) ? record.Window : null;
+
+        return For(active, instant, settings) with
+        {
+            EndedReason = record is null || active is not null
+                ? null
+                : record.Cancelled ? Cancelled : Expired
         };
     }
 }
