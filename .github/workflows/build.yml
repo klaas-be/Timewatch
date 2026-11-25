@@ -22,6 +22,11 @@ jobs:
       - name: Test
         run: dotnet test Timewatch.slnx --configuration Release
 
+      # The injected script's decisions - the teaser moment, what a 404 means, the lease
+      # restore - are the parts that would fail silently in a browser, so they are tested.
+      - name: Test the injected script
+        run: node --test tests/js/timewatch.test.cjs
+
       # Every push to main yields an installable version, so no version string is ever
       # edited by hand. Pull requests stop after the test step.
       - name: Work out the version
