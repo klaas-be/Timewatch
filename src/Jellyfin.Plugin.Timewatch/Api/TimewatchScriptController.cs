@@ -9,15 +9,17 @@ using Microsoft.Net.Http.Headers;
 namespace Jellyfin.Plugin.Timewatch.Api;
 
 /// <summary>
-/// Serves the injected client script out of the assembly. The one anonymous endpoint
-/// Timewatch has, and the reason it is anonymous: the tag our index.html transformation
-/// injects is a <c>&lt;script src&gt;</c>, and a script tag carries no access token.
+/// Serves the injected client script out of the assembly, and the reason it is anonymous:
+/// the tag our index.html transformation injects is a <c>&lt;script src&gt;</c>, and a
+/// script tag carries no access token.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Separate from <see cref="TimewatchController"/> so that the authorisation story is
 /// visible in the type: everything on that controller is <c>[Authorize]</c>, everything on
 /// this one is anonymous, and neither can drift into the other by someone adding an action.
+/// <see cref="TimewatchStartPageController"/> is the other anonymous one, for the
+/// equivalent reason: a bookmarked URL sends no token either.
 /// There is no global authorisation fallback in Jellyfin, so an action without
 /// <c>[Authorize]</c> is already anonymous; <see cref="AllowAnonymousAttribute"/> is here to
 /// say that it is meant to be.

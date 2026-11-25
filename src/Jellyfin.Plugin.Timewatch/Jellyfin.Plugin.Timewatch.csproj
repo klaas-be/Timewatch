@@ -46,6 +46,12 @@
       TimewatchScriptController.
     -->
     <EmbeddedResource Include="Injection\timewatch.js" />
+
+    <!--
+      The standalone start page, for the same reason: it is served out of the assembly by
+      TimewatchStartPageController, never as a file beside the DLL.
+    -->
+    <EmbeddedResource Include="Api\startPage.html" />
   </ItemGroup>
 
 </Project>
