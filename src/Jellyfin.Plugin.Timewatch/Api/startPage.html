@@ -239,8 +239,9 @@
     <section class="panel signin" id="panel-signin" hidden>
         <p class="note" id="signin-reason">Sign in to Jellyfin in this browser, then reload this page.</p>
         <p class="note"><a id="web-client-link" href="/web/">Open Jellyfin</a></p>
-        <label for="token" style="margin-top:18px">Or paste an access token</label>
-        <input id="token" type="password" autocomplete="off" spellcheck="false" aria-label="Access token">
+        <label for="token" style="margin-top:18px">Or paste a user access token</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false" aria-label="User access token">
+        <p class="note">An API key will not do: a Watch Window belongs to one account.</p>
         <button class="primary" type="button" id="use-token">Use this token</button>
     </section>
 
@@ -265,8 +266,10 @@
      *
      * If that is unavailable — a different host name or port than the one signed in to, a
      * private window, storage blocked, or never signed in on this browser — the page falls
-     * back to asking for an access token (or an admin API key) once and keeping it in its
-     * own localStorage entry.
+     * back to asking for a USER access token once and keeping it in its own localStorage
+     * entry. An API key is no use here, however much of an admin it belongs to: a Watch
+     * Window belongs to one account, the acting user is read off the request, and an API
+     * key is authenticated but is nobody — every call would 401.
      */
 
     var CREDENTIALS_KEY = 'jellyfin_credentials';
@@ -377,6 +380,30 @@
 
     /* ---- the API --------------------------------------------------------- */
 
+    /*
+     * What to show the user for a response that failed. The API answers a refused request
+     * with ProblemDetails, whose `detail` is the sentence meant for a person; anything
+     * else is shown as it came, and an empty body as the bare status code. Showing the
+     * body verbatim would mean quotes around a JSON string, or a line of JSON.
+     */
+    function messageFrom(body, status) {
+        var fallback = 'The server said ' + status + '.';
+
+        try {
+            var parsed = JSON.parse(body);
+            if (parsed && typeof parsed === 'object') {
+                return parsed.detail || parsed.Detail || parsed.title || parsed.Title || fallback;
+            }
+            if (typeof parsed === 'string' && parsed) {
+                return parsed;
+            }
+        } catch (error) {
+            // Not JSON at all: whatever it is reads better than a status code.
+        }
+
+        return body || fallback;
+    }
+
     function call(method, path) {
         var accessToken = token();
         if (!accessToken) {
@@ -397,7 +424,7 @@
 
             if (!response.ok) {
                 return response.text().then(function (body) {
-                    return Promise.reject({ message: body || ('The server said ' + response.status + '.') });
+                    return Promise.reject({ message: messageFrom(body, response.status) });
                 });
             }
 

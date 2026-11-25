@@ -60,6 +60,59 @@ public abstract class WatchWindowStoreContract
         Assert.Null(await store.GetActiveWindowAsync(Alice, NineOClock));
     }
 
+    /// <summary>
+    /// A cancelled window and one that ran out both read as absent, so the store has to
+    /// remember which happened: the client shows a stopping card for one and goes quietly
+    /// inert for the other.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_window_is_remembered_as_cancelled()
+    {
+        var store = NewStore();
+        await store.StartWindowAsync(WatchWindow.StartingAt(Alice, NineOClock, TimeSpan.FromHours(2)));
+
+        await store.CancelWindowAsync(Alice);
+
+        var record = await store.GetLatestWindowAsync(Alice);
+        Assert.NotNull(record);
+        Assert.True(record.Cancelled);
+        Assert.Equal(NineOClock.AddHours(2), record.Window.EndsAt);
+    }
+
+    [Fact]
+    public async Task A_window_that_was_left_to_run_out_is_not_remembered_as_cancelled()
+    {
+        var store = NewStore();
+        await store.StartWindowAsync(WatchWindow.StartingAt(Alice, NineOClock, TimeSpan.FromHours(2)));
+
+        var record = await store.GetLatestWindowAsync(Alice);
+        Assert.NotNull(record);
+        Assert.False(record.Cancelled);
+    }
+
+    [Fact]
+    public async Task Starting_a_window_after_a_cancel_is_a_window_that_was_not_cancelled()
+    {
+        var store = NewStore();
+        await store.StartWindowAsync(WatchWindow.StartingAt(Alice, NineOClock, TimeSpan.FromHours(2)));
+        await store.CancelWindowAsync(Alice);
+
+        await store.StartWindowAsync(WatchWindow.StartingAt(Alice, NineOClock, TimeSpan.FromHours(1)));
+
+        var record = await store.GetLatestWindowAsync(Alice);
+        Assert.NotNull(record);
+        Assert.False(record.Cancelled);
+        Assert.NotNull(await store.GetActiveWindowAsync(Alice, NineOClock));
+    }
+
+    [Fact]
+    public async Task A_user_who_never_started_a_window_has_nothing_remembered()
+    {
+        var store = NewStore();
+
+        Assert.Null(await store.GetLatestWindowAsync(Alice));
+    }
+
     [Fact]
     public async Task Cancelling_when_nothing_is_active_is_not_an_error()
     {

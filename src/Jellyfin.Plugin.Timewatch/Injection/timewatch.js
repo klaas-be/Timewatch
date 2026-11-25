@@ -19,21 +19,25 @@
  * What it does, in order of how the evening goes:
  *   1. Polls `GET /Timewatch/Suggestions` (with playingItemId/playingSeriesId) to learn
  *      whether a Watch Window is active, what the Suggestions are, and whether the Window
- *      is Spent. A 404 means no Window at all — but for a client that WAS running one it
- *      means the time is up.
+ *      is Spent. A 404 means no Window at all — but for a client that WAS running one the
+ *      Window has just ended, and `GET /Timewatch/WatchWindow` says whether that was the
+ *      time running out (the Spent card) or the user cancelling (go inert, in silence).
  *   2. While a Window is active it holds two LEASES over native behaviour: the Up Next
  *      overlay (per-user localStorage flag, re-read by jellyfin-web on every tick) and the
  *      auto-advance (`playbackManager._playNextAfterEnded`). Both are taken long before
  *      media end, because auto-advance fires on the player's `stopped` event and reacting
  *      to `playbackstop` is already too late. Both are restored on Window end or cancel,
- *      and reconciled on script load so a crash cannot leave the native overlay off.
+ *      reconciled on script load so a crash cannot leave the native overlay off, and taken
+ *      again at once after a reload during a Window — the marker in localStorage is what
+ *      says this client was holding them.
  *   3. At the native moment (~30-40s remaining, episodes only) it shows a small teaser at
  *      the edge of the screen naming the top Suggestion, with "Start now" and "Choose…".
  *   4. At media end — or on "Choose…" — it opens the End Card: the Suggestions with their
  *      Effective Runtime and Slack, a pick that plays immediately, and a dismiss that
  *      writes watched state server-side and refills the slot.
  *   5. When the Window is Spent it says the time is up and offers nothing. There is no
- *      extend control, deliberately.
+ *      extend control, deliberately. A cancel is not Spent: it is what the user just
+ *      asked for, so it passes without a word.
  *
  * Jellyfin JSON is PascalCase and case-sensitive; every property read here matches the
  * endpoint table in the API ticket exactly.
@@ -137,6 +141,20 @@
         return previous;
     }
 
+    /**
+     * What a Watch Window ending means for this client, from the status endpoint's
+     * `EndedReason`.
+     *
+     * A Window that was cancelled and one whose time ran out both read as absent, and the
+     * difference matters: the user who cancels asked for normal Jellyfin behaviour back,
+     * and handing them a stopping overlay to dismiss is the opposite of what they asked
+     * for. Anything else — expiry, an unreadable answer, an older server that says nothing
+     * — is the time being up, because that is the signal whose absence would be a bug.
+     */
+    function endedPhase(endedReason) {
+        return endedReason === 'Cancelled' ? PHASE_INERT : PHASE_SPENT;
+    }
+
     /** Minutes and hours the way a person says them. */
     function formatDuration(seconds) {
         var minutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
@@ -170,6 +188,38 @@
         return slack > 0
             ? runtime + ' · leaves ' + formatDuration(slack)
             : runtime + ' · overruns by ' + formatDuration(-slack);
+    }
+
+    /**
+     * How much of an item was left at the moment playback stopped, from the last playback
+     * snapshot taken by the ticker.
+     *
+     * The snapshot cannot simply be believed. Browsers throttle a background tab's timers
+     * to roughly once a minute while the video keeps playing, so when an episode ends in a
+     * backgrounded tab the last tick can be a minute stale — and a minute stale is the
+     * difference between "finished" and "nothing happened". The wall clock is not
+     * throttled, so the snapshot is carried forward by the time that really passed. A
+     * snapshot taken while paused is carried forward by nothing: a long pause and then a
+     * stop is somebody giving up on an item, and an End Card would be an intrusion.
+     *
+     * Returns null when the position was never readable, which is not "finished".
+     */
+    function remainingAtStop(snapshot, nowMs) {
+        var remaining = snapshot ? Number(snapshot.remainingSeconds) : NaN;
+        if (!snapshot || snapshot.remainingSeconds === null || !isFinite(remaining)) {
+            return null;
+        }
+
+        if (snapshot.paused) {
+            return remaining;
+        }
+
+        var elapsed = (Number(nowMs) - Number(snapshot.readAt)) / 1000;
+        if (!isFinite(elapsed) || elapsed <= 0) {
+            return remaining;
+        }
+
+        return Math.max(0, remaining - elapsed);
     }
 
     /**
@@ -522,6 +572,14 @@
                 return request('GET', 'Timewatch/Suggestions', query, true);
             },
 
+            /**
+             * Only asked when a Window has just ended, for its `EndedReason`: the
+             * Suggestions endpoint answers 404 either way and cannot say which.
+             */
+            status: function () {
+                return request('GET', 'Timewatch/WatchWindow', {}, true);
+            },
+
             dismiss: function (itemId) {
                 return request(
                     'POST',
@@ -569,7 +627,12 @@
                 positionSeconds: positionSeconds,
                 remainingSeconds: runtimeSeconds !== null && positionSeconds !== null
                     ? runtimeSeconds - positionSeconds
-                    : null
+                    : null,
+                // When this reading was taken, and whether it was taken while paused: a
+                // throttled tab's snapshot is stale by an unknown amount and
+                // `remainingAtStop` needs both to carry it forward.
+                readAt: Date.now(),
+                paused: callOn(playbackManager, 'paused', player) === true
             };
         } catch (error) {
             warn('could not read the current playback state', error);
@@ -662,15 +725,22 @@
     }
 
     /**
-     * Where an overlay goes. `.upNextContainer` is the native Up Next mount point and the
-     * one stable hook worth using: it is inside the video view, so a teaser placed there
-     * disappears with the player. Falling back to the body is harmless.
+     * Where an overlay goes: the body, always.
+     *
+     * `.upNextContainer` looks like the better hook — it is the native Up Next mount point
+     * and it lives inside the video view — but in jellyfin-web's video OSD it ships with
+     * the `hide` class (`display:none !important`) and is only un-hidden by the native Up
+     * Next dialog rendering, which this plugin deliberately suppresses. A teaser appended
+     * inside a `display:none` ancestor is invisible however it is positioned, so using it
+     * would make the plugin look completely inert exactly where it matters. The body costs
+     * nothing: both the teaser and the card are `position:fixed`, and both are torn down
+     * when playback goes away.
      */
     function mountPoint() {
         try {
-            return document.querySelector('.upNextContainer') || document.body;
-        } catch (error) {
             return document.body;
+        } catch (error) {
+            return null;
         }
     }
 
@@ -753,7 +823,13 @@
             var card = element('div', 'timewatch-card');
             build(card);
             overlay.appendChild(card);
-            mountPoint().appendChild(overlay);
+            var mount = mountPoint();
+            if (!mount) {
+                overlay = null;
+                return;
+            }
+
+            mount.appendChild(overlay);
 
             escapeListener = function (event) {
                 if (event.key === 'Escape') {
@@ -794,7 +870,12 @@
                 }));
                 teaser.appendChild(actions);
 
-                mountPoint().appendChild(teaser);
+                var mount = mountPoint();
+                if (mount) {
+                    mount.appendChild(teaser);
+                } else {
+                    teaser = null;
+                }
             },
 
             hideTeaser: removeTeaser,
@@ -895,20 +976,20 @@
         var api = createApi(apiClient);
         var leases = createLeases(storage, playbackManager, userId);
 
-        var phase = readKey(storage, WINDOW_MARKER_KEY) ? PHASE_ACTIVE : PHASE_INERT;
+        var wasRunning = readKey(storage, WINDOW_MARKER_KEY) ? true : false;
+        var phase = PHASE_INERT;
         var suggestions = [];
         var remainingSeconds = 0;
         var spentShown = false;
-        var teaserShownForItem = null;
         var lastPlayback = null;
         var endCardForItem = null;
         var pollTimer = null;
         var tickTimer = null;
-        var inFlight = false;
+        var inFlight = null;
         var destroyed = false;
 
-        // A marker-derived starting phase must not look like a fresh lease: reconcile
-        // first, then let the first poll re-acquire if the Window really is still running.
+        // Repair whatever an earlier session left behind before taking anything of our
+        // own: an abandoned lease would otherwise leave the native overlay off for good.
         leases.reconcileOnLoad();
 
         var ui = createUi({
@@ -930,6 +1011,15 @@
             }
         });
 
+        // A reload during a running Watch Window: the marker says this client was holding
+        // the leases, so they are taken again here and now rather than waiting for a poll
+        // — media can end before the first response, and auto-advance fires at media end.
+        // Going through enterPhase is what acquires them; seeding `phase` directly would
+        // make every later transition into "active" a no-op and the leases unreachable.
+        if (wasRunning) {
+            enterPhase(PHASE_ACTIVE);
+        }
+
         function serverId() {
             var id = callOn(apiClient, 'serverId');
             return id || undefined;
@@ -942,7 +1032,6 @@
 
             ui.hideTeaser();
             ui.hideOverlay();
-            teaserShownForItem = null;
 
             try {
                 var result = playbackManager.play({
@@ -1008,7 +1097,6 @@
 
             leases.release();
             ui.hideTeaser();
-            teaserShownForItem = null;
             endCardForItem = null;
 
             if (next === PHASE_SPENT) {
@@ -1026,35 +1114,108 @@
             ui.hideOverlay();
         }
 
+        /**
+         * One read of the Suggestions endpoint, and the promise of it.
+         *
+         * Whoever awaits a poll wants data that is newer than what they are looking at —
+         * the End Card refilling the slot it just freed, above all. So a poll made while
+         * one is already in flight is that same request rather than an already-resolved
+         * promise: resolving straight away would hand the caller the suggestions from
+         * before their own dismiss, with the dismissed item still on them.
+         *
+         * Nothing in the handlers may stop the loop. A surprise anywhere in them — a UI
+         * that cannot render, a phase transition that throws — degrades this evening's
+         * feature; a loop that stops degrades the whole session, with the client frozen in
+         * its last phase. Hence the try/finally around the body and a swallowed error
+         * rather than a rejection nobody is waiting for.
+         */
         function poll() {
-            if (destroyed || inFlight) {
+            if (destroyed) {
                 return Promise.resolve();
             }
 
-            inFlight = true;
+            if (inFlight) {
+                return inFlight;
+            }
+
             var playing = lastPlayback;
 
-            return api.suggestions(playing).then(function (response) {
-                inFlight = false;
-                var body = response.data || {};
+            inFlight = api.suggestions(playing).then(received, failed);
+            return inFlight;
 
-                if (response.status === 200) {
-                    suggestions = Array.isArray(body.Suggestions) ? body.Suggestions : [];
-                    remainingSeconds = Number(body.RemainingSeconds) || 0;
+            function received(response) {
+                inFlight = null;
+
+                try {
+                    var body = response.data || {};
+
+                    if (response.status === 200) {
+                        suggestions = Array.isArray(body.Suggestions) ? body.Suggestions : [];
+                        remainingSeconds = Number(body.RemainingSeconds) || 0;
+                    }
+
+                    return settle(response, body);
+                } catch (error) {
+                    warn('a Suggestions response could not be acted on', error);
+                } finally {
+                    schedulePoll();
                 }
 
-                enterPhase(nextPhase({
-                    previous: phase,
-                    status: response.status,
-                    spent: body.Spent === true
-                }));
+                return undefined;
+            }
 
-                schedulePoll();
-            }, function (error) {
-                inFlight = false;
-                warn('the Suggestions endpoint could not be read', error);
-                schedulePoll();
+            function failed(error) {
+                inFlight = null;
+
+                try {
+                    warn('the Suggestions endpoint could not be read', error);
+                } finally {
+                    schedulePoll();
+                }
+            }
+        }
+
+        /**
+         * The phase a response puts this client in. A 404 that ends a Window this client
+         * was running needs one more question answered — was it cancelled, or did the time
+         * run out? — and that answer comes from the status endpoint, so this may be a
+         * promise. Everything else is decided here and now.
+         */
+        function settle(response, body) {
+            var next = nextPhase({
+                previous: phase,
+                status: response.status,
+                spent: body.Spent === true
             });
+
+            if (next === PHASE_SPENT && response.status === 404) {
+                return api.status().then(function (status) {
+                    var reason = status.status === 200 && status.data
+                        ? status.data.EndedReason
+                        : null;
+                    applyPhase(endedPhase(reason));
+                }, function () {
+                    // Unanswerable: the time being up is the reading that keeps the
+                    // stopping signal, and a cancel that looks like an expiry costs one
+                    // dismissed card rather than an evening of silent auto-advance.
+                    applyPhase(next);
+                });
+            }
+
+            applyPhase(next);
+            return undefined;
+        }
+
+        /**
+         * A phase change reaches the DOM, and the DOM can surprise us. It must not take
+         * the poll loop with it; see poll().
+         */
+        function applyPhase(next) {
+            try {
+                enterPhase(next);
+            } catch (error) {
+                warn('a phase change could not be completed', error);
+            }
         }
 
         function schedulePoll() {
@@ -1100,7 +1261,6 @@
                     // A new item started: last item's teaser and card are stale.
                     ui.hideTeaser();
                     ui.hideOverlay();
-                    teaserShownForItem = null;
                     endCardForItem = null;
                     poll();
                 }
@@ -1120,11 +1280,6 @@
                 return;
             }
 
-            if (teaserShownForItem === playback.id) {
-                // Ignored teasers persist to the end of the item, so nothing to do.
-                return;
-            }
-
             if (!shouldShowTeaser(playback) || ui.isOverlayOpen()) {
                 return;
             }
@@ -1135,7 +1290,11 @@
                 return;
             }
 
-            teaserShownForItem = playback.id;
+            // Offered on every tick inside the lead, not once per item: showTeaser
+            // itself is what keeps an ignored teaser standing, and what re-renders it
+            // when the Suggestion changes. Latching on the item instead made a teaser
+            // outlive the Suggestion it names, and "Start now" then played something the
+            // engine would no longer suggest.
             ui.showTeaser(top);
         }
 
@@ -1146,13 +1305,12 @@
          */
         function onPlaybackGone(previous) {
             ui.hideTeaser();
-            teaserShownForItem = null;
 
             if (phase !== PHASE_ACTIVE) {
                 return;
             }
 
-            var remaining = previous.remainingSeconds;
+            var remaining = remainingAtStop(previous, Date.now());
             var finished = remaining !== null && remaining <= ENDED_WITHIN_SECONDS;
             if (!finished || endCardForItem === previous.id) {
                 return;
@@ -1202,6 +1360,14 @@
                 subscribe();
                 tickTimer = setInterval(tick, TICK_MS);
                 poll();
+            },
+
+            /**
+             * One read of the server, now, resolving when this client has acted on the
+             * answer. The UI uses it to refill a freed slot; the tests drive it.
+             */
+            refresh: function () {
+                return poll();
             },
 
             destroy: function () {
@@ -1323,9 +1489,12 @@
     }
 
     // Browsers never see this: `module` is undefined there. It is how the node tests under
-    // tests/js reach the pure decisions above without a DOM or a Jellyfin.
+    // tests/js reach the pure decisions above — and the controller, which they drive with
+    // a fake storage, ApiClient and playbackManager — without a browser or a Jellyfin.
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = {
+            createController: createController,
+            remainingAtStop: remainingAtStop,
             teaserLeadSeconds: teaserLeadSeconds,
             shouldShowTeaser: shouldShowTeaser,
             nextPhase: nextPhase,

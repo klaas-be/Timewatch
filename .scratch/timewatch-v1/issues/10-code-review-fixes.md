@@ -1,6 +1,6 @@
 # Code review fixes
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01, 02, 03, 04, 05, 06, 07, 08, 09
 
@@ -117,3 +117,30 @@ Spent-when-only-one-candidate behaviour.
 - Findings 1, 2, 5, 6 and 7 are logic errors in code that has runnable tests
   (`tests/js/timewatch.test.cjs`, run with `node --test`): add a failing test first.
 - `dotnet test Timewatch.slnx` green and `node --test tests/js/timewatch.test.cjs` green.
+
+## Answer
+
+All thirteen findings are fixed on `ticket/10-review-fixes`; none was argued down.
+
+| # | What was done |
+| --- | --- |
+| 1 | The Window marker now drives `enterPhase(PHASE_ACTIVE)` at construction instead of seeding `phase`, so both leases are acquired after a reload. Test: "a reload during an active Watch Window takes both suppression leases again". |
+| 2 | A poll made while one is in flight is that same request; `refresh()` is the awaited operation. Test: "a refresh resolves with fresh data, never with what the last poll knew". |
+| 3 | Overlays mount on `document.body`. The safe route, as asked: `.upNextContainer` could not be observed on a live client. |
+| 4 | The store remembers a cancellation; `WatchWindowStatus` carries `EndedReason` ("Cancelled"/"Expired"); the client asks for it on the transition out of an active Window and goes inert silently on a cancel. Endpoint table in ticket 06 updated. |
+| 5 | The per-item teaser latch is gone, so `showTeaser`'s re-render path is reached. Test: "the teaser follows the Suggestion on offer instead of latching onto the first". |
+| 6 | The poll handlers are try/finally around `schedulePoll()`, and a phase change is applied through a guard. Test: "a surprise while handling a response degrades the feature instead of ending polling". |
+| 7 | New `remainingAtStop` carries the last snapshot forward by the wall clock (and not at all when it was taken while paused). Test: "an episode that ends in a throttled background tab still counts as finished". |
+| 8 | The store's read filter is `IOException or UnauthorizedAccessException or JsonException or FormatException`. |
+| 9 | The temp-file cleanup is wrapped so it cannot replace the original exception. |
+| 10 | `AddClientPlugin` checks `JTokenType.String` instead of casting. Test: "AddsThePluginAlongsideEntriesThatAreNotStrings". |
+| 11 | The sign-in panel asks for a user access token and says an API key will not do. |
+| 12 | The refused duration is `ProblemDetails`; the start page reads `detail` out of a failed response body. |
+| 13 | `.gitignore` narrowed to `.claude/worktrees/`. |
+
+Nothing in the "reviewed and found correct" list was touched. The release zip is unchanged
+in shape: one new source file, no new embedded resource.
+
+Still wants live verification on a server: that the overlays are visible mounted on the
+body in the video OSD (finding 3), and that the start page renders the ProblemDetails
+`detail` for a refused duration (finding 12) — neither has a seam the suites can reach.

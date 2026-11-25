@@ -71,11 +71,13 @@ public class TimewatchController : ControllerBase
 
         var settings = Settings();
         var now = DateTimeOffset.UtcNow;
-        var window = await _windowStore
-            .GetActiveWindowAsync(userId, now, cancellationToken)
+        var record = await _windowStore
+            .GetLatestWindowAsync(userId, cancellationToken)
             .ConfigureAwait(false);
 
-        return WatchWindowStatus.For(window, now, settings);
+        // The most recent window rather than the active one: when none is active, this is
+        // where a client learns whether that is a cancel or the time having run out.
+        return WatchWindowStatus.ForLatest(record, now, settings);
     }
 
     /// <summary>
@@ -110,8 +112,13 @@ public class TimewatchController : ControllerBase
 
         if (WindowDuration.Resolve(minutes, settings) is not { } duration)
         {
-            return BadRequest(
-                $"A Watch Window lasts between a minute and {WindowDuration.Longest.TotalHours} hours.");
+            // ProblemDetails, not BadRequest(string): this controller produces JSON, so a
+            // bare string is serialised as a JSON string and a page that shows the body as
+            // it comes shows the message with its quotes still on.
+            return Problem(
+                detail: $"A Watch Window lasts between a minute and {WindowDuration.Longest.TotalHours} hours.",
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "That is not a length of evening.");
         }
 
         var now = DateTimeOffset.UtcNow;
