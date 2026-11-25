@@ -173,6 +173,38 @@
     }
 
     /**
+     * How much of an item was left at the moment playback stopped, from the last playback
+     * snapshot taken by the ticker.
+     *
+     * The snapshot cannot simply be believed. Browsers throttle a background tab's timers
+     * to roughly once a minute while the video keeps playing, so when an episode ends in a
+     * backgrounded tab the last tick can be a minute stale — and a minute stale is the
+     * difference between "finished" and "nothing happened". The wall clock is not
+     * throttled, so the snapshot is carried forward by the time that really passed. A
+     * snapshot taken while paused is carried forward by nothing: a long pause and then a
+     * stop is somebody giving up on an item, and an End Card would be an intrusion.
+     *
+     * Returns null when the position was never readable, which is not "finished".
+     */
+    function remainingAtStop(snapshot, nowMs) {
+        var remaining = snapshot ? Number(snapshot.remainingSeconds) : NaN;
+        if (!snapshot || snapshot.remainingSeconds === null || !isFinite(remaining)) {
+            return null;
+        }
+
+        if (snapshot.paused) {
+            return remaining;
+        }
+
+        var elapsed = (Number(nowMs) - Number(snapshot.readAt)) / 1000;
+        if (!isFinite(elapsed) || elapsed <= 0) {
+            return remaining;
+        }
+
+        return Math.max(0, remaining - elapsed);
+    }
+
+    /**
      * Puts the native overlay flag back exactly as it was found, absence included: the
      * flag defaults to on when the key is missing, so writing "true" over a key that was
      * never there would be a change of its own.
@@ -569,7 +601,12 @@
                 positionSeconds: positionSeconds,
                 remainingSeconds: runtimeSeconds !== null && positionSeconds !== null
                     ? runtimeSeconds - positionSeconds
-                    : null
+                    : null,
+                // When this reading was taken, and whether it was taken while paused: a
+                // throttled tab's snapshot is stale by an unknown amount and
+                // `remainingAtStop` needs both to carry it forward.
+                readAt: Date.now(),
+                paused: callOn(playbackManager, 'paused', player) === true
             };
         } catch (error) {
             warn('could not read the current playback state', error);
@@ -895,7 +932,8 @@
         var api = createApi(apiClient);
         var leases = createLeases(storage, playbackManager, userId);
 
-        var phase = readKey(storage, WINDOW_MARKER_KEY) ? PHASE_ACTIVE : PHASE_INERT;
+        var wasRunning = readKey(storage, WINDOW_MARKER_KEY) ? true : false;
+        var phase = PHASE_INERT;
         var suggestions = [];
         var remainingSeconds = 0;
         var spentShown = false;
@@ -907,8 +945,8 @@
         var inFlight = false;
         var destroyed = false;
 
-        // A marker-derived starting phase must not look like a fresh lease: reconcile
-        // first, then let the first poll re-acquire if the Window really is still running.
+        // Repair whatever an earlier session left behind before taking anything of our
+        // own: an abandoned lease would otherwise leave the native overlay off for good.
         leases.reconcileOnLoad();
 
         var ui = createUi({
@@ -929,6 +967,15 @@
                 removeKey(storage, WINDOW_MARKER_KEY);
             }
         });
+
+        // A reload during a running Watch Window: the marker says this client was holding
+        // the leases, so they are taken again here and now rather than waiting for a poll
+        // — media can end before the first response, and auto-advance fires at media end.
+        // Going through enterPhase is what acquires them; seeding `phase` directly would
+        // make every later transition into "active" a no-op and the leases unreachable.
+        if (wasRunning) {
+            enterPhase(PHASE_ACTIVE);
+        }
 
         function serverId() {
             var id = callOn(apiClient, 'serverId');
@@ -1152,7 +1199,7 @@
                 return;
             }
 
-            var remaining = previous.remainingSeconds;
+            var remaining = remainingAtStop(previous, Date.now());
             var finished = remaining !== null && remaining <= ENDED_WITHIN_SECONDS;
             if (!finished || endCardForItem === previous.id) {
                 return;
@@ -1323,9 +1370,12 @@
     }
 
     // Browsers never see this: `module` is undefined there. It is how the node tests under
-    // tests/js reach the pure decisions above without a DOM or a Jellyfin.
+    // tests/js reach the pure decisions above — and the controller, which they drive with
+    // a fake storage, ApiClient and playbackManager — without a browser or a Jellyfin.
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = {
+            createController: createController,
+            remainingAtStop: remainingAtStop,
             teaserLeadSeconds: teaserLeadSeconds,
             shouldShowTeaser: shouldShowTeaser,
             nextPhase: nextPhase,

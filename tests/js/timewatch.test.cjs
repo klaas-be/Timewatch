@@ -91,3 +91,72 @@ test('the overlay lease restores exactly what it recorded, including absence', (
     timewatch.restoreOverlayFlag(fake, 'u1', 'true');
     assert.equal(store.get('u1-enableNextVideoInfoOverlay'), 'true');
 });
+
+/*
+ * Everything below drives the controller itself, with fakes for all it reads: localStorage,
+ * the ApiClient, playbackManager, and — where a test needs it — a document stub. The
+ * reload, refill, teaser and polling behaviours live behind that seam and none of them is
+ * reachable from the pure decisions alone.
+ */
+
+function fakeStorage(initial) {
+    const store = new Map(Object.entries(initial || {}));
+    return {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+        has: (k) => store.has(k)
+    };
+}
+
+test('a reload during an active Watch Window takes both suppression leases again', () => {
+    // The marker is what a reload leaves behind: this client was running a Window when the
+    // page went away. Without the leases the native overlay is back on and Jellyfin
+    // auto-advances at media end — the exact behaviour the plugin exists to prevent.
+    const storage = fakeStorage({
+        'timewatch-window-was-running': '1',
+        'u1-enableNextVideoInfoOverlay': 'true'
+    });
+    const playbackManager = {
+        play: () => {},
+        getCurrentPlayer: () => null,
+        _playNextAfterEnded: true
+    };
+
+    const controller = timewatch.createController({
+        playbackManager: playbackManager,
+        events: null,
+        apiClient: null,
+        storage: storage,
+        userId: 'u1'
+    });
+
+    assert.equal(storage.getItem('u1-enableNextVideoInfoOverlay'), 'false');
+    assert.equal(playbackManager._playNextAfterEnded, false);
+
+    // And it is still a lease: what it took over comes back on release.
+    controller.destroy();
+    assert.equal(storage.getItem('u1-enableNextVideoInfoOverlay'), 'true');
+    assert.equal(playbackManager._playNextAfterEnded, true);
+});
+
+test('an episode that ends in a throttled background tab still counts as finished', () => {
+    // Browsers throttle a background tab's timers to roughly once a minute while the video
+    // keeps playing, so the last snapshot can be a minute behind the truth. Carrying it
+    // forward by the wall clock is what makes the End Card open at all in that tab.
+    const snapshot = { remainingSeconds: 58, readAt: 1000, paused: false };
+
+    assert.equal(timewatch.remainingAtStop(snapshot, 1000), 58);
+    assert.equal(timewatch.remainingAtStop(snapshot, 61000), 0);
+    assert.equal(timewatch.remainingAtStop(snapshot, 46000), 13);
+
+    // A paused item makes no progress, so its snapshot is carried forward by nothing: a
+    // long pause followed by a stop is somebody giving up, not an episode finishing.
+    assert.equal(
+        timewatch.remainingAtStop({ remainingSeconds: 58, readAt: 1000, paused: true }, 601000),
+        58);
+
+    // An unknown position stays unknown rather than becoming a finished item.
+    assert.equal(timewatch.remainingAtStop({ remainingSeconds: null, readAt: 1000 }, 61000), null);
+    assert.equal(timewatch.remainingAtStop(null, 61000), null);
+});
