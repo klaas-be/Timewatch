@@ -19,21 +19,25 @@
  * What it does, in order of how the evening goes:
  *   1. Polls `GET /Timewatch/Suggestions` (with playingItemId/playingSeriesId) to learn
  *      whether a Watch Window is active, what the Suggestions are, and whether the Window
- *      is Spent. A 404 means no Window at all — but for a client that WAS running one it
- *      means the time is up.
+ *      is Spent. A 404 means no Window at all — but for a client that WAS running one the
+ *      Window has just ended, and `GET /Timewatch/WatchWindow` says whether that was the
+ *      time running out (the Spent card) or the user cancelling (go inert, in silence).
  *   2. While a Window is active it holds two LEASES over native behaviour: the Up Next
  *      overlay (per-user localStorage flag, re-read by jellyfin-web on every tick) and the
  *      auto-advance (`playbackManager._playNextAfterEnded`). Both are taken long before
  *      media end, because auto-advance fires on the player's `stopped` event and reacting
  *      to `playbackstop` is already too late. Both are restored on Window end or cancel,
- *      and reconciled on script load so a crash cannot leave the native overlay off.
+ *      reconciled on script load so a crash cannot leave the native overlay off, and taken
+ *      again at once after a reload during a Window — the marker in localStorage is what
+ *      says this client was holding them.
  *   3. At the native moment (~30-40s remaining, episodes only) it shows a small teaser at
  *      the edge of the screen naming the top Suggestion, with "Start now" and "Choose…".
  *   4. At media end — or on "Choose…" — it opens the End Card: the Suggestions with their
  *      Effective Runtime and Slack, a pick that plays immediately, and a dismiss that
  *      writes watched state server-side and refills the slot.
  *   5. When the Window is Spent it says the time is up and offers nothing. There is no
- *      extend control, deliberately.
+ *      extend control, deliberately. A cancel is not Spent: it is what the user just
+ *      asked for, so it passes without a word.
  *
  * Jellyfin JSON is PascalCase and case-sensitive; every property read here matches the
  * endpoint table in the API ticket exactly.
