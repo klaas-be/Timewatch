@@ -31,6 +31,9 @@ changelog: |
     are suppressed, and restored when the window ends.
   - When the time is up the card says so and offers nothing. There is no
     extend button, by design.
+  - The start page lists what fits, for when you do not know where to begin:
+    each with how long it runs and what it leaves, a link into the client to
+    play it, and "not tonight" to drop it.
 
   Requires the File Transformation plugin, which Jellyfin cannot install for
   you. Reaches browsers, Jellyfin Desktop, LG webOS, Android mobile and iOS;

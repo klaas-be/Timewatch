@@ -365,7 +365,8 @@ does not have; they are verified by hand on the live server after the first inst
 
 - Multi-item bundles — several alternative *combinations* that fill the Window. The End
   Card shows single items only; the standalone page gets bundles in a later version, once
-  it's known whether the page is used mid-evening at all.
+  it's known whether the page is used mid-evening at all. (Single-item Suggestions on the
+  start page were added after v1 shipped — see ticket 11. Bundles remain out of scope.)
 - An injected "start a Watch Window" control in the player or home screen. v1 starts
   Windows only from the standalone page.
 - Extending a Watch Window. There is no extend control anywhere, by design.

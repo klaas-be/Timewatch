@@ -195,6 +195,80 @@
         font-size: 0.95rem;
     }
 
+    .suggestions {
+        margin-top: 22px;
+        border-top: 1px solid var(--line);
+        padding-top: 18px;
+        text-align: left;
+    }
+
+    .suggestions h2 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 0 0 12px;
+    }
+
+    .suggestion {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+    }
+
+    .suggestion:first-of-type { border-top: none; }
+
+    .suggestion .about { flex: 1 1 auto; min-width: 0; }
+
+    .suggestion .title {
+        display: block;
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .suggestion .title:hover, .suggestion .title:focus { color: var(--accent); }
+
+    .suggestion .fit {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.82rem;
+        color: var(--muted);
+    }
+
+    .suggestion .skip {
+        flex: 0 0 auto;
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 7px 12px;
+        font: inherit;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+
+    .suggestion .skip:hover, .suggestion .skip:focus {
+        color: var(--danger);
+        border-color: var(--danger);
+    }
+
+    .suggestions .reroll {
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 9px 16px;
+        margin-top: 14px;
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+
     .signin input {
         width: 100%;
         font-size: 1rem;
@@ -234,6 +308,12 @@
         <p class="clock" id="clock" aria-live="polite">&mdash;:&mdash;&mdash;</p>
         <p class="caption" id="ends-at"></p>
         <button class="destructive" type="button" id="cancel">Cancel this Watch Window</button>
+
+        <div class="suggestions" id="suggestions" hidden>
+            <h2 id="suggestions-heading">What fits</h2>
+            <div id="suggestion-list"></div>
+            <button class="reroll" type="button" id="reroll">Show me something else</button>
+        </div>
     </section>
 
     <section class="panel signin" id="panel-signin" hidden>
@@ -291,7 +371,11 @@
         cancelButton: document.getElementById('cancel'),
         tokenInput: document.getElementById('token'),
         useToken: document.getElementById('use-token'),
-        who: document.getElementById('who')
+        who: document.getElementById('who'),
+        suggestions: document.getElementById('suggestions'),
+        suggestionsHeading: document.getElementById('suggestions-heading'),
+        suggestionList: document.getElementById('suggestion-list'),
+        reroll: document.getElementById('reroll')
     };
 
     /* ---- where the API is ------------------------------------------------ */
@@ -529,10 +613,12 @@
                 minute: '2-digit'
             });
             show(el.running);
+            loadSuggestions();
             return;
         }
 
         stopTicking();
+        el.suggestions.hidden = true;
         show(el.start);
     }
 
@@ -555,6 +641,139 @@
     function load() {
         return call('GET', '/Timewatch/WatchWindow').then(render, handle);
     }
+
+    /* ---- what fits ------------------------------------------------------- */
+
+    /*
+     * The same Suggestions the End Card shows, for starting an evening rather than
+     * continuing one: with nothing playing, the engine's ranking reads as "finish what you
+     * started, then the next episode of a series you are following, then something new",
+     * which is the order that answers "I do not know where to begin".
+     *
+     * This page cannot start playback itself: playbackManager lives in jellyfin-web and
+     * this page is not jellyfin-web. So a Suggestion is a link INTO the client's item page,
+     * where the play button is. One extra tap, and it works from a phone on the sofa.
+     */
+
+    function serverId() {
+        var raw = readStored(CREDENTIALS_KEY);
+        if (!raw) { return null; }
+
+        var servers;
+        try {
+            servers = (JSON.parse(raw) || {}).Servers;
+        } catch (error) {
+            return null;
+        }
+
+        if (!Array.isArray(servers)) { return null; }
+
+        var identified = servers.filter(function (server) { return server && server.Id; });
+        return identified.length ? identified[0].Id : null;
+    }
+
+    function itemLink(itemId) {
+        var link = apiRoot + '/web/#/details?id=' + encodeURIComponent(itemId);
+        var server = serverId();
+        return server ? link + '&serverId=' + encodeURIComponent(server) : link;
+    }
+
+    function minutesOf(seconds) {
+        return Math.max(1, Math.round(seconds / 60));
+    }
+
+    // Reads the way a person would say it: how long it runs, and what that leaves.
+    function fitOf(suggestion) {
+        var runs = minutesOf(suggestion.EffectiveRuntimeSeconds) + ' min';
+        var slack = suggestion.SlackSeconds;
+
+        if (typeof slack !== 'number') { return runs; }
+        if (slack < -30) { return runs + ' \u00b7 ' + minutesOf(-slack) + ' min over'; }
+        if (slack < 60) { return runs + ' \u00b7 fills it'; }
+        return runs + ' \u00b7 leaves ' + minutesOf(slack) + ' min';
+    }
+
+    function titleOf(suggestion) {
+        return suggestion.SeriesName
+            ? suggestion.SeriesName + ' \u2014 ' + suggestion.Title
+            : suggestion.Title;
+    }
+
+    function renderSuggestions(response) {
+        var suggestions = (response && response.Suggestions) || [];
+
+        el.suggestionList.textContent = '';
+        el.suggestions.hidden = false;
+
+        if (!suggestions.length) {
+            el.suggestionsHeading.textContent = response && response.Spent
+                ? 'Nothing fits the time left'
+                : 'Nothing to suggest';
+            el.reroll.hidden = true;
+            return;
+        }
+
+        el.suggestionsHeading.textContent = 'What fits';
+        el.reroll.hidden = false;
+
+        suggestions.forEach(function (suggestion) {
+            var row = document.createElement('div');
+            row.className = 'suggestion';
+
+            var about = document.createElement('div');
+            about.className = 'about';
+
+            var link = document.createElement('a');
+            link.className = 'title';
+            link.href = itemLink(suggestion.ItemId);
+            link.textContent = titleOf(suggestion);
+
+            var fit = document.createElement('span');
+            fit.className = 'fit';
+            fit.textContent = fitOf(suggestion);
+
+            about.appendChild(link);
+            about.appendChild(fit);
+
+            var skip = document.createElement('button');
+            skip.className = 'skip';
+            skip.type = 'button';
+            skip.textContent = 'Not tonight';
+            skip.addEventListener('click', function () {
+                skip.disabled = true;
+                dismiss(suggestion.ItemId);
+            });
+
+            row.appendChild(about);
+            row.appendChild(skip);
+            el.suggestionList.appendChild(row);
+        });
+    }
+
+    function loadSuggestions() {
+        return call('GET', '/Timewatch/Suggestions').then(renderSuggestions, function (problem) {
+            // 404 is "no Watch Window", which the status call has already told us about, and
+            // a blip is not worth an error panel over a list that refreshes anyway.
+            el.suggestions.hidden = true;
+            if (problem && problem.unauthenticated) { handle(problem); }
+        });
+    }
+
+    // Dismiss marks it watched server-side, exactly as it does on the End Card, so it also
+    // leaves Next Up and Continue Watching everywhere.
+    function dismiss(itemId) {
+        return call('POST', '/Timewatch/Suggestions/' + encodeURIComponent(itemId) + '/Dismiss')
+            .then(loadSuggestions, function (problem) {
+                if (problem && problem.unauthenticated) { handle(problem); return; }
+                loadSuggestions();
+            });
+    }
+
+    el.reroll.addEventListener('click', function () {
+        el.reroll.disabled = true;
+        loadSuggestions().then(function () { el.reroll.disabled = false; },
+            function () { el.reroll.disabled = false; });
+    });
 
     /* ---- the three things the page does ---------------------------------- */
 
