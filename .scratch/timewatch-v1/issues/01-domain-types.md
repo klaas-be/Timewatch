@@ -1,6 +1,6 @@
 # Domain types: Candidate, Suggestion, Watch Window
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: —
 

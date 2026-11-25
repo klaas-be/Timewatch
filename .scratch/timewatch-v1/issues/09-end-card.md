@@ -1,6 +1,6 @@
 # Injected client: teaser, End Card, suppression
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 06, 08
 

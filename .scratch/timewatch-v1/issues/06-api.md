@@ -1,6 +1,6 @@
 # HTTP API
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02, 03, 04, 05
 

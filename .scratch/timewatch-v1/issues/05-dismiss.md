@@ -1,6 +1,6 @@
 # Dismiss: mark a single item played
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01
 
