@@ -109,6 +109,108 @@ function fakeStorage(initial) {
     };
 }
 
+/**
+ * An ApiClient whose requests hang until a test answers them, which is what lets a test
+ * say "while a request is in flight…" at all. `calls` is every request made, in order.
+ */
+function fakeClient() {
+    const calls = [];
+    return {
+        calls: calls,
+        getUrl: (path, query) => path + '?' + new URLSearchParams(query || {}).toString(),
+        ajax: (options) => new Promise((resolve, reject) => {
+            calls.push({ url: options.url, type: options.type, resolve: resolve, reject: reject });
+        }),
+        serverId: () => 's1',
+        getCurrentUserId: () => 'u1'
+    };
+}
+
+/** A playbackManager with one episode on screen, that far from its end. */
+function playingEpisode(state) {
+    const player = { name: 'fake' };
+    return {
+        play: () => {},
+        getCurrentPlayer: () => player,
+        currentItem: () => ({
+            Id: state.id,
+            Type: 'Episode',
+            SeriesId: 'series-1',
+            RunTimeTicks: state.runtimeSeconds * 10000000
+        }),
+        getCurrentTicks: () => (state.runtimeSeconds - state.remainingSeconds) * 10000000,
+        paused: () => false
+    };
+}
+
+/** Enough of a document for the overlays; every node is a plain object. */
+function fakeDocument() {
+    function create(tag) {
+        const node = {
+            tagName: tag,
+            className: '',
+            textContent: '',
+            dataset: {},
+            children: [],
+            parentNode: null,
+            handlers: {},
+            appendChild: (child) => {
+                child.parentNode = node;
+                node.children.push(child);
+                return child;
+            },
+            removeChild: (child) => {
+                node.children = node.children.filter((other) => other !== child);
+                child.parentNode = null;
+                return child;
+            },
+            addEventListener: (name, handler) => {
+                node.handlers[name] = (node.handlers[name] || []).concat(handler);
+            },
+            removeEventListener: () => {}
+        };
+        return node;
+    }
+
+    return {
+        body: create('body'),
+        head: create('head'),
+        createElement: create,
+        getElementById: () => null,
+        querySelector: () => null,
+        addEventListener: () => {},
+        removeEventListener: () => {}
+    };
+}
+
+function textOf(node) {
+    return [node.textContent || '']
+        .concat(node.children.map(textOf))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function teaserText(document) {
+    const teaser = document.body.children.find((node) => node.className === 'timewatch-teaser');
+    return teaser ? textOf(teaser) : null;
+}
+
+function suggestion(name) {
+    return {
+        ItemId: 'item-' + name,
+        Title: name,
+        SeriesName: 'Severance',
+        EffectiveRuntimeSeconds: 2580,
+        SlackSeconds: 1020
+    };
+}
+
+/** Lets every already-resolved promise run its handlers. */
+function settled() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
 test('a reload during an active Watch Window takes both suppression leases again', () => {
     // The marker is what a reload leaves behind: this client was running a Window when the
     // page went away. Without the leases the native overlay is back on and Jellyfin
@@ -138,6 +240,94 @@ test('a reload during an active Watch Window takes both suppression leases again
     controller.destroy();
     assert.equal(storage.getItem('u1-enableNextVideoInfoOverlay'), 'true');
     assert.equal(playbackManager._playNextAfterEnded, true);
+});
+
+test('a refresh resolves with fresh data, never with what the last poll knew', async () => {
+    // Awaiting a refresh is how the End Card refills the slot it just freed. A refresh that
+    // resolves immediately because another request is in flight hands the caller the
+    // suggestions from before the dismiss — the item dismissed is still on the card.
+    const client = fakeClient();
+    const controller = timewatch.createController({
+        playbackManager: { play: () => {}, getCurrentPlayer: () => null },
+        events: null,
+        apiClient: client,
+        storage: fakeStorage({}),
+        userId: 'u1'
+    });
+
+    try {
+        const first = controller.refresh();
+        let secondResolved = false;
+        const second = controller.refresh();
+        second.then(() => { secondResolved = true; });
+
+        await settled();
+        assert.equal(client.calls.length, 1, 'the two refreshes share the one request');
+        assert.equal(secondResolved, false, 'a refresh must not resolve before an answer');
+
+        client.calls[0].reject({ status: 404 });
+        await Promise.all([first, second]);
+        assert.equal(secondResolved, true);
+    } finally {
+        controller.destroy();
+    }
+});
+
+test('the teaser follows the Suggestion on offer instead of latching onto the first', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const document = fakeDocument();
+    globalThis.document = document;
+    t.after(() => { delete globalThis.document; });
+
+    const client = fakeClient();
+    const controller = timewatch.createController({
+        playbackManager: playingEpisode({ id: 'now-playing', runtimeSeconds: 3000, remainingSeconds: 35 }),
+        events: null,
+        apiClient: client,
+        storage: fakeStorage({}),
+        userId: 'u1'
+    });
+    t.after(() => controller.destroy());
+
+    controller.start();
+    client.calls[0].resolve({ Spent: false, RemainingSeconds: 3600, Suggestions: [suggestion('Good Clean Fun')] });
+    await settled();
+
+    t.mock.timers.tick(1000);
+    assert.match(teaserText(document), /Good Clean Fun/);
+
+    // The engine stops offering that episode — it was watched elsewhere, or no longer fits.
+    // A teaser still naming it would play something the engine would not suggest.
+    const refreshed = controller.refresh();
+    client.calls[client.calls.length - 1]
+        .resolve({ Spent: false, RemainingSeconds: 3000, Suggestions: [suggestion('Defiant Jazz')] });
+    await refreshed;
+
+    t.mock.timers.tick(1000);
+    assert.match(teaserText(document), /Defiant Jazz/);
+});
+
+test('a surprise while handling a response degrades the feature instead of ending polling', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const client = fakeClient();
+    // No document at all, so putting up the Spent card throws: any such surprise used to
+    // skip schedulePoll() and freeze the client in its last phase for the whole session.
+    const controller = timewatch.createController({
+        playbackManager: { play: () => {}, getCurrentPlayer: () => null },
+        events: null,
+        apiClient: client,
+        storage: fakeStorage({ 'timewatch-window-was-running': '1' }),
+        userId: 'u1'
+    });
+    t.after(() => controller.destroy());
+
+    controller.start();
+    client.calls[0].resolve({ Spent: true, RemainingSeconds: 0, Suggestions: [] });
+    await settled();
+
+    t.mock.timers.tick(30000);
+    const polls = client.calls.filter((call) => call.url.indexOf('Suggestions') >= 0);
+    assert.ok(polls.length > 1, 'the next poll was scheduled anyway');
 });
 
 test('an episode that ends in a throttled background tab still counts as finished', () => {
