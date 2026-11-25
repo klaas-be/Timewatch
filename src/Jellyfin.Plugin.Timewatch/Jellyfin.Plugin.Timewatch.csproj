@@ -11,6 +11,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      File Transformation hands its callbacks a Newtonsoft JObject, so we need the compile-time
+      type - but ExcludeAssets=runtime keeps the DLL OUT of our output, which is essential and
+      not an optimisation. Jellyfin 12.4 gives every plugin its own collectible PluginLoadContext
+      and loads every DLL in the plugin folder into it. A Newtonsoft.Json.dll of our own would
+      win that context's cache-by-name, so our JObject would be a different type from the one
+      File Transformation's method signature expects (which resolves to the server's copy in the
+      default context), and the reflective Invoke would fail with an argument mismatch. The two
+      reference plugins ship no Newtonsoft either, which is why their reflection call works.
+    -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ExcludeAssets=runtime is mandatory: without it the plugin fails to register. -->
     <PackageReference Include="Jellyfin.Controller" Version="12.4.0">
       <ExcludeAssets>runtime</ExcludeAssets>
@@ -22,6 +38,20 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+
+    <!--
+      Embedded, not content: the release zip must contain exactly the plugin DLL and
+      meta.json, because Jellyfin's PluginLoadContext loads every DLL it finds in the plugin
+      folder and CI enforces the contents. The script is served out of the assembly by
+      TimewatchScriptController.
+    -->
+    <EmbeddedResource Include="Injection\timewatch.js" />
+
+    <!--
+      The standalone start page, for the same reason: it is served out of the assembly by
+      TimewatchStartPageController, never as a file beside the DLL.
+    -->
+    <EmbeddedResource Include="Api\startPage.html" />
   </ItemGroup>
 
 </Project>

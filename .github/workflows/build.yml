@@ -22,6 +22,11 @@ jobs:
       - name: Test
         run: dotnet test Timewatch.slnx --configuration Release
 
+      # The injected script's decisions - the teaser moment, what a 404 means, the lease
+      # restore - are the parts that would fail silently in a browser, so they are tested.
+      - name: Test the injected script
+        run: node --test tests/js/timewatch.test.cjs
+
       # Every push to main yields an installable version, so no version string is ever
       # edited by hand. Pull requests stop after the test step.
       - name: Work out the version
@@ -35,6 +40,22 @@ jobs:
           pip install --quiet jprm
           mkdir -p artifacts
           jprm plugin build . --version="${{ steps.version.outputs.version }}"
+
+      # Jellyfin loads every DLL in a plugin folder into that plugin's own load context, so a
+      # bundled dependency gets a type identity of its own and breaks reflection against other
+      # plugins. The zip must therefore contain our assembly and nothing else.
+      - name: Check the zip ships no bundled dependencies
+        if: github.event_name != 'pull_request'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          contents="$(unzip -Z1 "artifacts/timewatch_$VERSION.zip" | sort | tr '\n' ' ')"
+          expected="Jellyfin.Plugin.Timewatch.dll meta.json "
+          if [ "$contents" != "$expected" ]; then
+            echo "::error::Unexpected plugin zip contents: $contents"
+            echo "Expected exactly: $expected"
+            exit 1
+          fi
 
       - name: Publish the release
         if: github.event_name != 'pull_request'

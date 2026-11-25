@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="robots" content="noindex">
+<title>Timewatch</title>
+<style>
+    :root {
+        --bg: #101014;
+        --panel: #1b1b22;
+        --line: #2e2e38;
+        --text: #f2f2f5;
+        --muted: #a0a0ad;
+        --accent: #00a4dc;
+        --accent-text: #00121b;
+        --danger: #e05263;
+        --radius: 14px;
+    }
+
+    @media (prefers-color-scheme: light) {
+        :root {
+            --bg: #f4f4f7;
+            --panel: #ffffff;
+            --line: #dcdce4;
+            --text: #16161c;
+            --muted: #5d5d6b;
+            --accent: #0072a3;
+            --accent-text: #ffffff;
+            --danger: #b3263a;
+        }
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; min-height: 100%; }
+
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+        min-height: 100vh;
+    }
+
+    main {
+        width: 100%;
+        max-width: 420px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        /* Pushed down so the controls sit in reach of a thumb on a phone. */
+        margin-top: auto;
+        margin-bottom: 0;
+    }
+
+    h1 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0;
+        text-align: center;
+    }
+
+    .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px 18px;
+    }
+
+    [hidden] { display: none !important; }
+
+    .clock {
+        font-variant-numeric: tabular-nums;
+        font-size: clamp(3rem, 20vw, 4.5rem);
+        font-weight: 300;
+        line-height: 1;
+        text-align: center;
+        margin: 0;
+    }
+
+    .caption {
+        color: var(--muted);
+        text-align: center;
+        margin: 10px 0 0;
+        font-size: 0.95rem;
+    }
+
+    label {
+        display: block;
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+    }
+
+    .duration {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .duration input {
+        flex: 1 1 auto;
+        min-width: 0;
+        /* 16px or larger, so mobile Safari does not zoom the page on focus. */
+        font-size: 1.6rem;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+        padding: 12px 8px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        color: var(--text);
+        -moz-appearance: textfield;
+    }
+
+    .duration input::-webkit-outer-spin-button,
+    .duration input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .step {
+        flex: 0 0 56px;
+        font-size: 1.8rem;
+        line-height: 1;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        color: var(--text);
+    }
+
+    .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .presets button {
+        flex: 1 1 0;
+        min-width: 64px;
+        padding: 12px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        font-size: 0.95rem;
+    }
+
+    button {
+        font-family: inherit;
+        cursor: pointer;
+        min-height: 48px;
+        touch-action: manipulation;
+    }
+
+    button:disabled { opacity: 0.55; cursor: default; }
+
+    .primary, .destructive {
+        display: block;
+        width: 100%;
+        margin-top: 18px;
+        padding: 16px;
+        border: 0;
+        border-radius: var(--radius);
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .primary { background: var(--accent); color: var(--accent-text); }
+
+    .destructive {
+        background: transparent;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+    }
+
+    .note {
+        color: var(--muted);
+        font-size: 0.85rem;
+        text-align: center;
+        margin: 0;
+    }
+
+    .note a { color: var(--accent); }
+
+    .error {
+        border-color: var(--danger);
+        color: var(--danger);
+        font-size: 0.95rem;
+    }
+
+    .signin input {
+        width: 100%;
+        font-size: 1rem;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        color: var(--text);
+    }
+</style>
+</head>
+<body>
+<main>
+    <h1>Timewatch</h1>
+
+    <!-- Exactly one of these three panels is shown at a time. -->
+
+    <section class="panel" id="panel-start" hidden>
+        <label for="minutes">How long do you have?</label>
+        <div class="duration">
+            <button class="step" type="button" id="less" aria-label="Fifteen minutes less">&minus;</button>
+            <input id="minutes" type="number" inputmode="numeric" min="1" max="1440" step="1" value="120"
+                   aria-label="Watch Window length in minutes">
+            <button class="step" type="button" id="more" aria-label="Fifteen minutes more">+</button>
+        </div>
+        <div class="presets" id="presets">
+            <button type="button" data-minutes="45">45m</button>
+            <button type="button" data-minutes="60">1h</button>
+            <button type="button" data-minutes="90">1h 30</button>
+            <button type="button" data-minutes="120">2h</button>
+            <button type="button" data-minutes="180">3h</button>
+        </div>
+        <button class="primary" type="button" id="start">Start</button>
+    </section>
+
+    <section class="panel" id="panel-running" hidden>
+        <p class="clock" id="clock" aria-live="polite">&mdash;:&mdash;&mdash;</p>
+        <p class="caption" id="ends-at"></p>
+        <button class="destructive" type="button" id="cancel">Cancel this Watch Window</button>
+    </section>
+
+    <section class="panel signin" id="panel-signin" hidden>
+        <p class="note" id="signin-reason">Sign in to Jellyfin in this browser, then reload this page.</p>
+        <p class="note"><a id="web-client-link" href="/web/">Open Jellyfin</a></p>
+        <label for="token" style="margin-top:18px">Or paste a user access token</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false" aria-label="User access token">
+        <p class="note">An API key will not do: a Watch Window belongs to one account.</p>
+        <button class="primary" type="button" id="use-token">Use this token</button>
+    </section>
+
+    <p class="panel error" id="error" role="alert" hidden></p>
+    <p class="note" id="who"></p>
+</main>
+
+<script>
+(function () {
+    'use strict';
+
+    /*
+     * The standalone start page. It runs OUTSIDE jellyfin-web, so there is no
+     * window.ApiClient here and every call has to carry the user's token itself.
+     *
+     * The page is served by the plugin at <base>/Timewatch/Start and is therefore on the
+     * same origin as the web client at <base>/web/ — which is what makes the web client's
+     * stored credentials readable from here. They live in localStorage under
+     * "jellyfin_credentials" as { Servers: [ { AccessToken, UserId, ... } ] }, written by
+     * the jellyfin-apiclient Credentials class. We reuse the AccessToken of the one server
+     * entry that has one; no password is ever handled here.
+     *
+     * If that is unavailable — a different host name or port than the one signed in to, a
+     * private window, storage blocked, or never signed in on this browser — the page falls
+     * back to asking for a USER access token once and keeping it in its own localStorage
+     * entry. An API key is no use here, however much of an admin it belongs to: a Watch
+     * Window belongs to one account, the acting user is read off the request, and an API
+     * key is authenticated but is nobody — every call would 401.
+     */
+
+    var CREDENTIALS_KEY = 'jellyfin_credentials';
+    var TOKEN_KEY = 'timewatch.startPage.token';
+    var DEVICE_KEY = 'timewatch.startPage.deviceId';
+    var PAGE_PATH = '/timewatch/start';
+
+    var el = {
+        start: document.getElementById('panel-start'),
+        running: document.getElementById('panel-running'),
+        signin: document.getElementById('panel-signin'),
+        signinReason: document.getElementById('signin-reason'),
+        webClientLink: document.getElementById('web-client-link'),
+        error: document.getElementById('error'),
+        minutes: document.getElementById('minutes'),
+        clock: document.getElementById('clock'),
+        untilLine: document.getElementById('ends-at'),
+        startButton: document.getElementById('start'),
+        cancelButton: document.getElementById('cancel'),
+        tokenInput: document.getElementById('token'),
+        useToken: document.getElementById('use-token'),
+        who: document.getElementById('who')
+    };
+
+    /* ---- where the API is ------------------------------------------------ */
+
+    // The server may be hosted under a base URL; we are served from under the same one, so
+    // stripping our own path off the location is what finds it, with no configuration.
+    var apiRoot = (function () {
+        var path = window.location.pathname.replace(/\/+$/, '');
+        var suffix = path.toLowerCase().lastIndexOf(PAGE_PATH);
+        var base = suffix >= 0 ? path.slice(0, suffix) : '';
+        return window.location.origin + base;
+    })();
+
+    el.webClientLink.setAttribute('href', apiRoot + '/web/');
+
+    /* ---- storage, defensively ------------------------------------------- */
+
+    function readStored(key) {
+        try {
+            return window.localStorage.getItem(key);
+        } catch (err) {
+            // Private window, or site data blocked. Not an error we can do anything about.
+            return null;
+        }
+    }
+
+    function writeStored(key, value) {
+        try {
+            window.localStorage.setItem(key, value);
+        } catch (err) { /* nothing to do: the page works, it just will not remember. */ }
+    }
+
+    /* ---- authentication -------------------------------------------------- */
+
+    function storedCredentialToken() {
+        var raw = readStored(CREDENTIALS_KEY);
+        if (!raw) {
+            return null;
+        }
+
+        var servers;
+        try {
+            servers = (JSON.parse(raw) || {}).Servers;
+        } catch (err) {
+            return null;
+        }
+
+        if (!Array.isArray(servers)) {
+            return null;
+        }
+
+        // Newest first, so the server last signed in to wins when there are several.
+        var usable = servers.filter(function (server) { return server && server.AccessToken; });
+        usable.sort(function (a, b) {
+            return (b.DateLastAccessed || 0) - (a.DateLastAccessed || 0);
+        });
+
+        return usable.length ? usable[0].AccessToken : null;
+    }
+
+    function token() {
+        return readStored(TOKEN_KEY) || storedCredentialToken();
+    }
+
+    function deviceId() {
+        var existing = readStored(DEVICE_KEY);
+        if (existing) {
+            return existing;
+        }
+
+        var fresh = 'timewatch-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        writeStored(DEVICE_KEY, fresh);
+        return fresh;
+    }
+
+    // The scheme Jellyfin's own clients use: Authorization: MediaBrowser Client="…", …,
+    // Token="…", every value URI-encoded.
+    function authorizationHeader(accessToken) {
+        return 'MediaBrowser '
+            + 'Client="Timewatch", '
+            + 'Device="' + encodeURIComponent('Timewatch start page') + '", '
+            + 'DeviceId="' + encodeURIComponent(deviceId()) + '", '
+            + 'Version="1", '
+            + 'Token="' + encodeURIComponent(accessToken) + '"';
+    }
+
+    /* ---- the API --------------------------------------------------------- */
+
+    /*
+     * What to show the user for a response that failed. The API answers a refused request
+     * with ProblemDetails, whose `detail` is the sentence meant for a person; anything
+     * else is shown as it came, and an empty body as the bare status code. Showing the
+     * body verbatim would mean quotes around a JSON string, or a line of JSON.
+     */
+    function messageFrom(body, status) {
+        var fallback = 'The server said ' + status + '.';
+
+        try {
+            var parsed = JSON.parse(body);
+            if (parsed && typeof parsed === 'object') {
+                return parsed.detail || parsed.Detail || parsed.title || parsed.Title || fallback;
+            }
+            if (typeof parsed === 'string' && parsed) {
+                return parsed;
+            }
+        } catch (error) {
+            // Not JSON at all: whatever it is reads better than a status code.
+        }
+
+        return body || fallback;
+    }
+
+    function call(method, path) {
+        var accessToken = token();
+        if (!accessToken) {
+            return Promise.reject({ unauthenticated: true });
+        }
+
+        return window.fetch(apiRoot + path, {
+            method: method,
+            cache: 'no-store',
+            headers: {
+                Accept: 'application/json',
+                Authorization: authorizationHeader(accessToken)
+            }
+        }).then(function (response) {
+            if (response.status === 401 || response.status === 403) {
+                return Promise.reject({ unauthenticated: true });
+            }
+
+            if (!response.ok) {
+                return response.text().then(function (body) {
+                    return Promise.reject({ message: messageFrom(body, response.status) });
+                });
+            }
+
+            return response.status === 204 ? null : response.json();
+        }, function () {
+            return Promise.reject({ message: 'Could not reach the server.' });
+        });
+    }
+
+    /* ---- rendering ------------------------------------------------------- */
+
+    var endsAt = null;        // Date, while a Watch Window is running.
+    var ticking = null;
+
+    function show(panel) {
+        el.start.hidden = panel !== el.start;
+        el.running.hidden = panel !== el.running;
+        el.signin.hidden = panel !== el.signin;
+    }
+
+    function fail(message) {
+        el.error.textContent = message;
+        el.error.hidden = !message;
+    }
+
+    function needsSignIn(reason) {
+        stopTicking();
+        el.signinReason.textContent = reason;
+        show(el.signin);
+    }
+
+    function spell(totalSeconds) {
+        var seconds = Math.max(0, Math.floor(totalSeconds));
+        var hours = Math.floor(seconds / 3600);
+        var minutes = Math.floor((seconds % 3600) / 60);
+        var rest = seconds % 60;
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+
+        return hours > 0
+            ? hours + ':' + pad(minutes) + ':' + pad(rest)
+            : minutes + ':' + pad(rest);
+    }
+
+    function tick() {
+        if (!endsAt) {
+            return;
+        }
+
+        var left = (endsAt.getTime() - Date.now()) / 1000;
+        if (left <= 0) {
+            el.clock.textContent = '0:00';
+            el.untilLine.textContent = 'Your time is up.';
+            stopTicking();
+            // The server treats an expired Watch Window as absent, so re-reading the status
+            // is what moves the page back to offering a new one.
+            load();
+            return;
+        }
+
+        el.clock.textContent = spell(left);
+    }
+
+    function stopTicking() {
+        if (ticking) {
+            window.clearInterval(ticking);
+            ticking = null;
+        }
+
+        endsAt = null;
+    }
+
+    function startTicking(deadline) {
+        stopTicking();
+        endsAt = deadline;
+        tick();
+        ticking = window.setInterval(tick, 1000);
+    }
+
+    // The status is PascalCase and case-sensitive: Jellyfin's serializer has no naming
+    // policy, and a null is omitted rather than written, so an absent EndsAt means null.
+    function render(status) {
+        fail('');
+
+        if (status.DefaultWindowMinutes) {
+            el.minutes.value = String(status.DefaultWindowMinutes);
+        }
+
+        if (status.Active && status.EndsAt) {
+            var deadline = new Date(status.EndsAt);
+
+            // A clock skewed against the server's would make the countdown wrong; the
+            // server's own RemainingSeconds is the authority for how long is left, so the
+            // deadline is anchored to it and counted down locally. A sleeping tab then
+            // cannot drift, because every tick recomputes against that fixed instant.
+            if (typeof status.RemainingSeconds === 'number') {
+                deadline = new Date(Date.now() + (status.RemainingSeconds * 1000));
+            }
+
+            startTicking(deadline);
+            el.untilLine.textContent = 'Until ' + deadline.toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+            show(el.running);
+            return;
+        }
+
+        stopTicking();
+        show(el.start);
+    }
+
+    function handle(problem) {
+        if (problem && problem.unauthenticated) {
+            needsSignIn(readStored(TOKEN_KEY)
+                ? 'That token was not accepted. Paste a current one, or sign in to Jellyfin in this browser and reload.'
+                : 'Sign in to Jellyfin in this browser, then reload this page.');
+            return;
+        }
+
+        fail((problem && problem.message) || 'Something went wrong.');
+    }
+
+    function busy(on) {
+        el.startButton.disabled = on;
+        el.cancelButton.disabled = on;
+    }
+
+    function load() {
+        return call('GET', '/Timewatch/WatchWindow').then(render, handle);
+    }
+
+    /* ---- the three things the page does ---------------------------------- */
+
+    el.startButton.addEventListener('click', function () {
+        var minutes = parseInt(el.minutes.value, 10);
+        if (!(minutes >= 1)) {
+            fail('Give a length in minutes.');
+            return;
+        }
+
+        busy(true);
+        // A query parameter, not a body: Jellyfin binds query values case-insensitively,
+        // and a JSON body would bind to nothing and silently start a default-length window.
+        call('POST', '/Timewatch/WatchWindow?minutes=' + encodeURIComponent(minutes))
+            .then(render, handle)
+            .then(function () { busy(false); }, function () { busy(false); });
+    });
+
+    el.cancelButton.addEventListener('click', function () {
+        busy(true);
+        call('DELETE', '/Timewatch/WatchWindow')
+            .then(load, handle)
+            .then(function () { busy(false); }, function () { busy(false); });
+    });
+
+    el.useToken.addEventListener('click', function () {
+        var pasted = el.tokenInput.value.trim();
+        if (!pasted) {
+            return;
+        }
+
+        writeStored(TOKEN_KEY, pasted);
+        el.tokenInput.value = '';
+        load();
+    });
+
+    /* ---- duration controls ---------------------------------------------- */
+
+    function nudge(by) {
+        var current = parseInt(el.minutes.value, 10);
+        var next = (isNaN(current) ? 0 : current) + by;
+        el.minutes.value = String(Math.min(1440, Math.max(1, next)));
+    }
+
+    document.getElementById('less').addEventListener('click', function () { nudge(-15); });
+    document.getElementById('more').addEventListener('click', function () { nudge(15); });
+
+    document.getElementById('presets').addEventListener('click', function (event) {
+        var chosen = event.target && event.target.getAttribute('data-minutes');
+        if (chosen) {
+            el.minutes.value = chosen;
+        }
+    });
+
+    /* ---- staying current ------------------------------------------------ */
+
+    // Coming back to a page that has been in the background for an hour: re-read rather
+    // than trust whatever the countdown thinks.
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) {
+            load();
+        }
+    });
+
+    if (!token()) {
+        needsSignIn('Sign in to Jellyfin in this browser, then reload this page.');
+    } else {
+        load();
+    }
+}());
+</script>
+</body>
+</html>

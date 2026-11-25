@@ -11,3 +11,7 @@ artifacts/
 
 # OS
 .DS_Store
+
+# Agent worktrees. Only this one directory is one; the rest of .claude/ — a project
+# settings.json, for instance — is meant to be trackable.
+.claude/worktrees/

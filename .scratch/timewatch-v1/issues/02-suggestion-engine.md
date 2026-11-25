@@ -1,6 +1,6 @@
 # SuggestionEngine: fit, fillability, ranking
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01
 

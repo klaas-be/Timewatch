@@ -1,6 +1,6 @@
 # Watch Window store and lifecycle
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01
 
