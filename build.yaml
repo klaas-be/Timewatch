@@ -14,5 +14,24 @@ description: >
   last forty minutes of it. Requires the File Transformation plugin. Web-based clients only.
 artifacts:
   - "Jellyfin.Plugin.Timewatch.dll"
-changelog: >
-  Initial release.
+changelog: |
+  First working release.
+
+  - Start a watch window from /Timewatch/Start: pick a duration, see the time
+    left, cancel it. Works for any user, not just admins.
+  - Near the end of an episode a small popup names the best-fitting thing to
+    watch next, with "Start now" and "Choose...". It does not cover the video.
+  - The end card opens on "Choose..." or when the episode ends: suggestions
+    labelled with how long they run and what they would leave. Picking one
+    plays it; dismissing one marks it watched and refills the slot.
+  - A suggestion only appears if the time left after it can also be filled, so
+    you are never left with an unusable gap.
+  - The episode Jellyfin would have played next comes first whenever it fits.
+  - While a window is active, Jellyfin's own Up Next overlay and auto-advance
+    are suppressed, and restored when the window ends.
+  - When the time is up the card says so and offers nothing. There is no
+    extend button, by design.
+
+  Requires the File Transformation plugin, which Jellyfin cannot install for
+  you. Reaches browsers, Jellyfin Desktop, LG webOS, Android mobile and iOS;
+  not Samsung/Tizen, Android TV, Roku, Kodi or Swiftfin.
