@@ -85,6 +85,25 @@ public class AddClientPluginTests
     {
         Assert.Equal("not json", WebClientPatches.AddClientPlugin("not json", "Timewatch"));
     }
+
+    /// <summary>
+    /// Another plugin, or a future jellyfin-web, may put something other than a string in
+    /// the array. Reading it as one threw into File Transformation's serving path, which
+    /// is a broken web client rather than an unpatched one.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "plugins": [ { "name": "somePlugin" } ] }""")]
+    [InlineData("""{ "plugins": [ 7, null, [ "nested" ] ] }""")]
+    public void AddsThePluginAlongsideEntriesThatAreNotStrings(string json)
+    {
+        var patched = WebClientPatches.AddClientPlugin(json, "Timewatch");
+
+        var plugins = Newtonsoft.Json.Linq.JObject.Parse(patched)["plugins"]!;
+        Assert.Contains(
+            plugins,
+            entry => entry.Type == Newtonsoft.Json.Linq.JTokenType.String
+                && string.Equals((string?)entry, "Timewatch", StringComparison.Ordinal));
+    }
 }
 
 public class CallbackTests

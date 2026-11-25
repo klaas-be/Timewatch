@@ -101,8 +101,7 @@ public static class WebClientPatches
             plugins = [];
             config["plugins"] = plugins;
         }
-        else if (plugins.Any(entry =>
-            string.Equals((string?)entry, pluginName, StringComparison.Ordinal)))
+        else if (plugins.Any(entry => IsName(entry, pluginName)))
         {
             return contents;
         }
@@ -110,4 +109,16 @@ public static class WebClientPatches
         plugins.Add(pluginName);
         return config.ToString();
     }
+
+    /// <summary>
+    /// Whether an entry of the <c>plugins</c> array is exactly this name. The type is
+    /// checked rather than cast: another plugin or a future jellyfin-web may put an object
+    /// or a number in that array, and casting one to a string throws past the
+    /// <see cref="Newtonsoft.Json.JsonException"/> this method promises to absorb — out of
+    /// File Transformation's serving path, where it is a broken web client rather than an
+    /// unpatched one.
+    /// </summary>
+    private static bool IsName(JToken entry, string pluginName) =>
+        entry.Type == JTokenType.String
+        && string.Equals(entry.Value<string>(), pluginName, StringComparison.Ordinal);
 }

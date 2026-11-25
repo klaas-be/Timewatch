@@ -137,8 +137,14 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
 
             return document?.Windows?.Where(entry => entry is not null).ToList() ?? [];
         }
-        catch (Exception ex) when (ex is FileNotFoundException
-                                      or DirectoryNotFoundException
+        // IOException covers the file being gone, the directory being gone, and the file
+        // being held open by a backup or an antivirus; UnauthorizedAccessException covers
+        // the permissions a container volume remount can leave behind. Without those two,
+        // a file nobody can read right now turned every status and suggestions request
+        // into a 500 and froze the client's phase machine — which is precisely the
+        // "otherwise unreadable" case this is documented to survive.
+        catch (Exception ex) when (ex is IOException
+                                      or UnauthorizedAccessException
                                       or JsonException
                                       or FormatException)
         {
@@ -177,7 +183,18 @@ public sealed class FileWatchWindowStore : IWatchWindowStore
         }
         catch
         {
-            File.Delete(temporaryPath);
+            // The original failure is the one worth reporting, so cleaning up must not be
+            // able to replace it: a delete of a file still locked, or in a directory that
+            // has gone read-only, throws in its own right.
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A temporary file left behind is litter; the real cause goes to the log.
+            }
+
             throw;
         }
     }
