@@ -52,6 +52,56 @@ Timewatch cannot intervene in playback — those clients decide auto-advance the
    [its own repository](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation).
 3. Restart Jellyfin.
 
+## When the end card does not appear
+
+Work down this list; each step tells you something the next one cannot.
+
+**1. Is a watch window running?** Timewatch is deliberately inert without one, and inert
+means Jellyfin behaves exactly as it did before. Open `/Timewatch/Start` — you should see a
+countdown, not the duration picker.
+
+**2. Did the server register the injection?**
+
+```sh
+journalctl -u jellyfin --since today | grep -i timewatch
+```
+
+"registered its web client injection" is what you want. "needs the File Transformation
+plugin" means that dependency is missing — install it and restart.
+
+**3. Is the browser using a stale `config.json`?** This is the most likely cause, and it
+looks exactly like a broken plugin. Jellyfin sets `no-cache` only on `index.html`, so a
+browser can reuse a months-old `config.json` — the one file that tells the web client to
+load Timewatch at all. The script loads, and nothing happens.
+
+Compare what your browser sees with what the server sends:
+
+```js
+// in the web client's console
+fetch('/web/config.json').then(r => r.json()).then(c => console.log(c.plugins))
+```
+
+```sh
+curl -s http://YOUR-SERVER:8096/web/config.json | grep Timewatch
+```
+
+If the server lists `Timewatch` and the browser does not: DevTools → Network → tick
+**Disable cache** → reload. (Ctrl+Shift+R alone often will not do it for `fetch()`-ed
+files.) Or DevTools → Application → **Clear site data**.
+
+**4. What does the console say?** Set the log level to **Verbose** — Timewatch's startup
+line is `console.debug`. You want `Loading plugin (via window): Timewatch` from jellyfin-web,
+then `[Timewatch] client plugin started`. Any `[Timewatch]` warning says what is wrong.
+
+**5. Is the suppression lease held?** While a window runs:
+
+```js
+localStorage.getItem(ApiClient.getCurrentUserId() + '-enableNextVideoInfoOverlay')  // "false"
+```
+
+`null` or `"true"` means Timewatch is not holding it, and Jellyfin's own Up Next dialog
+will keep appearing.
+
 ## Development
 
 ```sh

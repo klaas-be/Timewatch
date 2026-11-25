@@ -51,6 +51,9 @@
     'use strict';
 
     var LOG_PREFIX = '[Timewatch]';
+    var SIGN_IN_BRISK_MS = 500;
+    var SIGN_IN_BRISK_FOR_MS = 30000;
+    var SIGN_IN_PATIENT_MS = 5000;
 
     /** How often the Suggestions endpoint is polled while a Watch Window is active. */
     var POLL_ACTIVE_MS = 15000;
@@ -1406,6 +1409,49 @@
         return id ? String(id) : null;
     }
 
+    /*
+     * jellyfin-web constructs its plugins BEFORE the user is signed in — the client's own
+     * log reads "loading installed plugins", "finished loading plugins", and only then
+     * "Begin connect" ... "connection state SignedIn". So at construction there is usually
+     * no ApiClient with a user on it, and treating that as "stay inert" means staying
+     * inert forever on a perfectly healthy client.
+     *
+     * Waits instead, and keeps waiting: a person can sit on the login screen for as long
+     * as they like. Cheap enough to run until the page goes away, and cancellable so a
+     * destroy() does not leave a timer behind.
+     */
+    function whenSignedIn(serverConnections, onReady) {
+        var timer = null;
+        var cancelled = false;
+        var waited = 0;
+
+        function attempt() {
+            if (cancelled) { return; }
+
+            var apiClient = resolveApiClient(serverConnections);
+            var userId = resolveUserId(apiClient);
+
+            if (apiClient && userId) {
+                debug('signed-in ApiClient found after ' + waited + 'ms');
+                onReady(apiClient, userId);
+                return;
+            }
+
+            // Brisk while the client is still connecting, then slow: the remaining case is
+            // someone looking at the login screen.
+            var delay = waited < SIGN_IN_BRISK_FOR_MS ? SIGN_IN_BRISK_MS : SIGN_IN_PATIENT_MS;
+            waited += delay;
+            timer = setTimeout(attempt, delay);
+        }
+
+        attempt();
+
+        return function cancel() {
+            cancelled = true;
+            if (timer !== null) { clearTimeout(timer); }
+        };
+    }
+
     function registerClientPlugin() {
         var constructed = false;
 
@@ -1438,29 +1484,34 @@
                             return;
                         }
 
-                        var apiClient = resolveApiClient(ServerConnections);
-                        var userId = resolveUserId(apiClient);
-                        if (!apiClient || !userId) {
-                            warn('no signed-in ApiClient; staying inert until the next load');
-                            return;
-                        }
+                        // Not "is there a signed-in user?" but "tell me when there is":
+                        // plugins are constructed before the client signs in.
+                        var controller = null;
+                        var stopWaiting = whenSignedIn(ServerConnections, function (apiClient, userId) {
+                            try {
+                                controller = createController({
+                                    playbackManager: playbackManager,
+                                    events: events,
+                                    inputManager: inputManager,
+                                    confirm: confirm,
+                                    apiClient: apiClient,
+                                    storage: openStorage(),
+                                    userId: userId
+                                });
 
-                        var controller = createController({
-                            playbackManager: playbackManager,
-                            events: events,
-                            inputManager: inputManager,
-                            confirm: confirm,
-                            apiClient: apiClient,
-                            storage: openStorage(),
-                            userId: userId
+                                controller.start();
+                                debug('client plugin started; watching for a Watch Window');
+                            } catch (error) {
+                                warn('the client plugin failed to start and will stay inert', error);
+                            }
                         });
 
                         this.destroy = function () {
-                            controller.destroy();
+                            stopWaiting();
+                            if (controller) { controller.destroy(); }
                         };
 
-                        controller.start();
-                        debug('client plugin constructed; watching for a Watch Window');
+                        debug('client plugin constructed; waiting for sign-in');
                     } catch (error) {
                         // Degrade to inert, never to a broken client.
                         warn('the client plugin failed to start and will stay inert', error);
@@ -1474,10 +1525,14 @@
         // patching minified chunks — is exactly what this design exists to avoid.
         setTimeout(function () {
             if (!constructed) {
-                warn('window.Timewatch was never constructed by jellyfin-web. The client '
-                    + 'plugin seam did not fire: check that /web/config.json lists '
-                    + '"Timewatch" in its plugins array and that this script runs before '
-                    + 'loadPlugins(). Timewatch is inert.');
+                warn('window.Timewatch was never constructed by jellyfin-web, so Timewatch '
+                    + 'is inert. The usual cause is a STALE CACHED /web/config.json in this '
+                    + 'browser: the server serves a patched copy listing "Timewatch", but '
+                    + 'Jellyfin sets no-cache only on index.html, so an older config.json '
+                    + 'can be reused for months. Open DevTools > Network, tick "Disable '
+                    + 'cache", and reload (or clear site data). Compare what this browser '
+                    + 'sees with what the server sends: '
+                    + 'fetch("/web/config.json").then(r => r.json()).then(c => console.log(c.plugins))');
             }
         }, 20000);
 
@@ -1500,7 +1555,8 @@
             nextPhase: nextPhase,
             formatDuration: formatDuration,
             fitLabel: fitLabel,
-            restoreOverlayFlag: restoreOverlayFlag
+            restoreOverlayFlag: restoreOverlayFlag,
+            whenSignedIn: whenSignedIn
         };
     }
 })();

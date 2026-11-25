@@ -401,3 +401,45 @@ test('an episode that ends in a throttled background tab still counts as finishe
     assert.equal(timewatch.remainingAtStop({ remainingSeconds: null, readAt: 1000 }, 61000), null);
     assert.equal(timewatch.remainingAtStop(null, 61000), null);
 });
+
+/*
+ * jellyfin-web constructs its plugins before the user signs in — observed on a live 12.4
+ * server, where the client logs "finished loading plugins" and only then "Begin connect".
+ * Treating that as "no signed-in ApiClient, stay inert" left the plugin dead on a
+ * perfectly healthy client, with the native Up Next dialog still counting down.
+ */
+test('the plugin waits for sign-in instead of giving up when constructed too early', async () => {
+    let currentApiClient = null;
+    const serverConnections = { currentApiClient: () => currentApiClient };
+
+    let readyWith = null;
+    timewatch.whenSignedIn(serverConnections, (apiClient, userId) => {
+        readyWith = { apiClient, userId };
+    });
+
+    assert.equal(readyWith, null, 'nothing to start with: the client has not connected yet');
+
+    // The client finishes connecting a moment later, as it does in practice.
+    currentApiClient = { getCurrentUserId: () => '90a8330ffe9749e882a6856af9b858c4' };
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    assert.ok(readyWith, 'the plugin starts once a user is signed in');
+    assert.equal(readyWith.userId, '90a8330ffe9749e882a6856af9b858c4');
+});
+
+test('waiting for sign-in can be cancelled, so destroy leaves no timer behind', async () => {
+    let asked = 0;
+    const serverConnections = {
+        currentApiClient: () => { asked += 1; return null; }
+    };
+
+    const cancel = timewatch.whenSignedIn(serverConnections, () => {
+        assert.fail('must not start after being cancelled');
+    });
+
+    const askedBeforeCancel = asked;
+    cancel();
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    assert.equal(asked, askedBeforeCancel, 'no further polling after cancel');
+});
