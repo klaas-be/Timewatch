@@ -81,14 +81,45 @@ public class StartPageResourceTests
     }
 
     /// <summary>
-    /// Out of scope for v1 — the page must not have grown a bundle view or a suggestions
-    /// list by accident of copying from the End Card.
+    /// The page lists what fits, for starting an evening rather than continuing one (ticket
+    /// 11, which reversed ticket 07's exclusion of a suggestions list). It reads the same
+    /// Suggestions endpoint as the End Card and dismisses through the same one, so a
+    /// renamed route has to break here rather than at the sofa.
     /// </summary>
     [Theory]
-    [InlineData("Timewatch/Suggestions")]
-    [InlineData("Dismiss")]
-    public void The_page_leaves_suggestions_alone(string absent)
+    [InlineData("/Timewatch/Suggestions")]
+    [InlineData("/Dismiss")]
+    public void The_page_offers_what_fits(string expected)
     {
-        Assert.DoesNotContain(absent, StartPageResource.ReadMarkup(), StringComparison.Ordinal);
+        Assert.Contains(expected, StartPageResource.ReadMarkup(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Still out of scope: multi-item bundles. Single-item Suggestions are the whole of
+    /// what the page offers, so the bundle view cannot arrive by accident of copying.
+    /// </summary>
+    [Fact]
+    public void The_page_leaves_bundles_alone()
+    {
+        var markup = StartPageResource.ReadMarkup();
+
+        Assert.DoesNotContain("bundle", markup, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The page runs outside jellyfin-web, so it has no playbackManager and cannot start
+    /// playback: a Suggestion is a link into the client's item page. If this ever became a
+    /// direct play attempt it would fail silently on the sofa.
+    /// </summary>
+    [Fact]
+    public void A_suggestion_links_into_the_web_client()
+    {
+        var markup = StartPageResource.ReadMarkup();
+
+        Assert.Contains("/web/#/details?id=", markup, StringComparison.Ordinal);
+
+        // The prose explains why playbackManager is unreachable from here, so look for a
+        // call to it rather than the word.
+        Assert.DoesNotContain("playbackManager.", markup, StringComparison.Ordinal);
     }
 }
