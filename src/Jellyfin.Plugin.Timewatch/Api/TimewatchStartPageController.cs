@@ -56,7 +56,7 @@ public class TimewatchStartPageController : ControllerBase
     public ActionResult GetStartPage()
     {
         var settings = TimewatchPlugin.Instance?.Configuration.ToSettings() ?? TimewatchSettings.Default;
-        var version = GetType().Assembly.GetName().Version?.ToString();
+        var version = PluginVersion.Of(GetType().Assembly);
         var policy = StartPageCachePolicy.For(settings, version);
 
         var markup = GetType().Assembly.GetManifestResourceStream(StartPageResource.ResourceName);

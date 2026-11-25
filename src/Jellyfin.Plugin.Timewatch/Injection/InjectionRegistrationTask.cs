@@ -7,6 +7,8 @@ using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
+using Jellyfin.Plugin.Timewatch.Domain;
+
 namespace Jellyfin.Plugin.Timewatch.Injection;
 
 /// <summary>
@@ -79,7 +81,7 @@ public class InjectionRegistrationTask : IScheduledTask
         var developerMode = TimewatchPlugin.Instance?.Configuration.DeveloperMode ?? false;
         var version = developerMode
             ? DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture)
-            : GetType().Assembly.GetName().Version?.ToString() ?? "0";
+            : PluginVersion.Of(GetType().Assembly);
         var baseUrl = _configurationManager.GetNetworkConfiguration().BaseUrl;
 
         WebClientPatches.Configure(WebClientPatches.BuildScriptUrl(baseUrl, version));

@@ -62,7 +62,7 @@ public class TimewatchScriptController : ControllerBase
     public ActionResult GetScript()
     {
         var settings = TimewatchPlugin.Instance?.Configuration.ToSettings() ?? TimewatchSettings.Default;
-        var version = GetType().Assembly.GetName().Version?.ToString();
+        var version = PluginVersion.Of(GetType().Assembly);
         var policy = ScriptCachePolicy.For(settings, version);
 
         var stream = GetType().Assembly.GetManifestResourceStream(ResourceName);
