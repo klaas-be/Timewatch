@@ -349,6 +349,56 @@ public class SuggestionEngineTests
         Assert.Equal(TimeSpan.Zero, offered.Suggestions[0].Slack);
     }
 
+    /// <summary>
+    /// Ranking alone fills every slot with the longest things that fit, so a library of
+    /// feature films answers "two hours" with four two-hour films — four ways to spend the
+    /// whole evening and no choice about how much of it to spend. The spread keeps the best
+    /// fit first and gives the rest of the slots to other Length Bands.
+    /// </summary>
+    [Fact]
+    public void Suggestions_are_spread_across_length_bands_rather_than_all_filling_the_window()
+    {
+        var result = Engine.Suggest(Request(
+            Min(120),
+            [
+                Film("Almost", Min(115)),
+                Film("Long", Min(110)),
+                Film("Longer", Min(105)),
+                Film("Longest", Min(100)),
+                Episode("Episode", Watching, Min(45)),
+                Episode("Quick", Playing, Min(25))
+            ]));
+
+        // Almost is the best fit and keeps the first slot; the 45 and 25 minute items are
+        // the only Candidates in their bands, so they take the next two; the fourth slot
+        // has no unrepresented band left and falls back to the next by rank.
+        Assert.Equal(["Almost", "Long", "Episode", "Quick"], TitlesOf(result));
+    }
+
+    [Fact]
+    public void A_length_band_is_a_slice_of_the_remaining_time_not_a_fixed_number_of_minutes()
+    {
+        var candidates = new[]
+        {
+            Film("FortyFive", Min(45)),
+            Film("Forty", Min(40)),
+            Film("ThirtyFive", Min(35)),
+            Film("Twenty", Min(20))
+        };
+        var twoSlots = TimewatchSettings.Default with { SuggestionCount = 2 };
+
+        // In fifty minutes these are four different lengths of evening, so the second slot
+        // goes to a shorter band than the first.
+        Assert.Equal(
+            ["FortyFive", "ThirtyFive"],
+            TitlesOf(Engine.Suggest(Request(Min(50), candidates, twoSlots))));
+
+        // In two hundred they are all quick, all in the bottom band, and ranking decides.
+        Assert.Equal(
+            ["FortyFive", "Forty"],
+            TitlesOf(Engine.Suggest(Request(Min(200), candidates, twoSlots))));
+    }
+
     /// <summary>Five films of descending length, so the slack ordering is unambiguous.</summary>
     private static readonly IReadOnlyList<Candidate> Ladder =
     [

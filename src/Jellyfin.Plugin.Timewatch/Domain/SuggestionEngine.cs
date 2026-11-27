@@ -48,13 +48,91 @@ public sealed class SuggestionEngine
             .ThenBy(candidate => TieBreak(candidate.ItemId, _randomSeed))
             .ToList();
 
-        var offered = BestPerSeries(offerable)
-            .Take(Math.Max(request.Settings.SuggestionCount, 0))
+        var offered = SpreadAcrossLengthBands(
+                BestPerSeries(offerable).ToList(),
+                remaining,
+                Math.Max(request.Settings.SuggestionCount, 0))
             .Select(candidate => Suggestion.For(candidate, remaining))
             .ToList();
 
         return SuggestionResult.Offer(offered);
     }
+
+    /// <summary>
+    /// How many Length Bands the Remaining Time is cut into. Four, to match the default
+    /// Suggestion count: the ideal End Card is one Candidate from each.
+    /// </summary>
+    private const int LengthBands = 4;
+
+    /// <summary>
+    /// Fills the Suggestion slots from an already-ranked sequence, preferring a Candidate
+    /// from a Length Band not yet represented. Ranking alone fills every slot with the
+    /// longest things that fit — four near-perfect fits of the whole Window — which is a
+    /// choice between four ways to spend the entire evening and no choice at all about how
+    /// much of it to spend. The best-ranked Candidate still takes the first slot; the
+    /// spread only decides which *others* are offered, and the answer stays in ranking
+    /// order so that the least-wasteful Suggestion is still the one read first.
+    /// </summary>
+    private static IReadOnlyList<Candidate> SpreadAcrossLengthBands(
+        IReadOnlyList<Candidate> ranked,
+        TimeSpan remaining,
+        int count)
+    {
+        if (ranked.Count <= count)
+        {
+            return ranked;
+        }
+
+        var chosen = new bool[ranked.Count];
+        var bands = new HashSet<int>();
+
+        for (var slot = 0; slot < count; slot++)
+        {
+            // A new band first, falling back to the next by rank once every band that is
+            // represented in the ranked list already has a Suggestion.
+            var index = NextIndex(fromNewBand: true) ?? NextIndex(fromNewBand: false);
+            if (index is not { } pick)
+            {
+                break;
+            }
+
+            chosen[pick] = true;
+            bands.Add(BandOf(ranked[pick], remaining));
+        }
+
+        return ranked.Where((_, index) => chosen[index]).ToList();
+
+        int? NextIndex(bool fromNewBand)
+        {
+            for (var index = 0; index < ranked.Count; index++)
+            {
+                if (chosen[index])
+                {
+                    continue;
+                }
+
+                if (!fromNewBand || !bands.Contains(BandOf(ranked[index], remaining)))
+                {
+                    return index;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The Length Band a Candidate falls into: which <see cref="LengthBands"/>th of the
+    /// Remaining Time its Effective Runtime reaches, 1 for the shortest. Bands are slices
+    /// of the Remaining Time rather than fixed minute counts so that "short" means short
+    /// *for this evening* — a 45 minute episode is a long option in an hour's Window and a
+    /// quick one in three hours'. Anything that overshoots lands in the top band.
+    /// </summary>
+    private static int BandOf(Candidate candidate, TimeSpan remaining) =>
+        Math.Clamp(
+            (int)Math.Ceiling(candidate.EffectiveRuntime / (remaining / LengthBands)),
+            1,
+            LengthBands);
 
     /// <summary>
     /// Keeps the first Candidate of each series from an already-ranked sequence, so an End

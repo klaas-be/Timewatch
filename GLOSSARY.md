@@ -50,6 +50,18 @@ A single Candidate offered to the User, labelled with how it fits: its Effective
 and the Slack it would leave. A Suggestion is one item, not a combination — combinations
 are only shown outside the End Card, where there is room to read them.
 
+## Length Band
+
+One of four equal slices of the Remaining Time, which a Candidate falls into by its
+Effective Runtime. Bands are slices rather than fixed minute counts because "short" is
+relative to the evening: a 45 minute episode is a long option in an hour's Window and a
+quick one in three hours'. A Candidate that overshoots falls in the top band.
+
+Length Bands exist to spread the Suggestions: the best-ranked Candidate takes the first
+slot, and each later slot prefers a band that has no Suggestion yet, so a long Window
+offers a long option, a middling one and something quick rather than four ways to spend the
+whole evening.
+
 ## Fillable
 
 A Candidate is Fillable when the time left after watching it can itself be filled: at
